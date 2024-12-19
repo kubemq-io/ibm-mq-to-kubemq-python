@@ -1,0 +1,45 @@
+# github.com/go-task/task
+
+version: '3'
+
+vars:
+  VERSION: v0.1.0
+  IMAGE_NAME: us-docker.pkg.dev/ji-portal-v2/justice-investments/justice-ai-platform
+
+tasks:
+  default:
+    env:
+#      LOG_LEVEL: ERROR
+    #      CONFIGURATION_FILE_PATH: ./config/config.yaml
+    cmds:
+      - uv run main.py
+  lint:
+    cmds:
+      - ruff format
+      - ruff check --fix
+
+  docker:
+    cmds:
+      - gcloud config set project ji-portal-v2
+      - docker buildx build --platform linux/amd64 --load -t {{.IMAGE_NAME}}:{{.VERSION}} . --no-cache --push
+      - docker pull {{.IMAGE_NAME}}:{{.VERSION}}
+      - docker tag {{.IMAGE_NAME}}:{{.VERSION}} {{.IMAGE_NAME}}:latest
+      - docker push {{.IMAGE_NAME}}:latest
+      - trivy image --exit-code 1 --severity CRITICAL,HIGH {{.IMAGE_NAME}}:{{.VERSION}}
+
+  docker-push:
+    cmds:
+      -
+      - docker push {{.IMAGE_NAME}}:{{.VERSION}}
+  trivy:
+    cmds:
+      - trivy image --exit-code 1 --severity HIGH,CRITICAL {{.IMAGE_NAME}}:{{.VERSION}}
+  #      - trivy image --exit-code 1 --severity HIGH,CRITICAL python:3.13.0-alpine3.20
+  docker-run:
+    cmds:
+      - docker run -it -p 8080:8080 -v ${PWD}/config.yaml:/app/config.yaml -v ${PWD}/templates.yaml:/app/templates.yaml -v ${PWD}/local_store:/app/local_store -v $(pwd)/.env:/app/.env -v $(pwd)/gcp_creds.json:/app/gcp_creds.json {{.IMAGE_NAME}}:{{.VERSION}}
+  deploy:
+    dir: ./deployment
+    cmds:
+      - kubectl config use-context gke_ji-portal-v2_us-central1_ai-agent-cluster
+      - kubectl apply -k . -n default

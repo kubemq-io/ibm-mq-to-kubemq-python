@@ -1,0 +1,13 @@
+[project]
+name = "ibm-mq-to-kubemq-python"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiodebug>=2.3.0",
+    "asyncer>=0.0.8",
+    "pydantic>=2.10.3",
+    "pymqi>=1.12.10",
+    "python-dotenv>=1.0.1",
+]
