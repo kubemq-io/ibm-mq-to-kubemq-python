@@ -5,7 +5,8 @@ from asyncio import Event
 import anyio
 from src.common.log import get_logger
 from src.ibm_mq.client import IBMMQClient
-from src.ibm_mq.config import Config
+from src.kubemq.client import KubeMQClient
+from src.kubemq.config import Config
 
 
 logger = get_logger("main")
@@ -13,16 +14,12 @@ logger = get_logger("main")
 
 def get_client():
     config: Config = Config(
-        host_name="84.200.100.229",
-        port_number=32384,
-        channel_name="SECUREAPP.CHANNEL",
-        queue_manager="secureapphelm",
-        queue_name="SECUREAPP.QUEUE",
-        username="admin",
-        password="Passw0rd",
-        poll_interval_ms=100,
+        address="localhost:50000",
+        queue_name="q1",
+        client_id="kubemq-client",
+        poll_interval_seconds=1,
     )
-    client: IBMMQClient = IBMMQClient()
+    client: KubeMQClient = KubeMQClient()
     client.init(config)
     return client
 
@@ -36,7 +33,7 @@ async def main():
     try:
         # client.test()
         await client.start()
-        # await client.send_message(b"Hello World")
+        await client.send_message(b"Hello World")
         # stop_event = Event()
         await client.poll(get_callback)
         await asyncio.sleep(30)

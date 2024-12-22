@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiodebug>=2.3.0",
     "asyncer>=0.0.8",
+    "kubemq>=3.4.1",
     "pydantic>=2.10.3",
     "pymqi>=1.12.10",
     "python-dotenv>=1.0.1",
