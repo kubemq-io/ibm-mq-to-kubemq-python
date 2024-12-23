@@ -15,17 +15,16 @@ from src.ibm_mq.config import Config
 
 
 class KubeMQClient(Connection):
-    def __init__(self):
-        self.config: Config | None = None
+    def __init__(self, config: Config):
+        self.config: Config = config
+        self.logger = get_logger(
+            f"kubemq.{self.config.binding_name}.{self.config.binding_type}"
+        )
         self.client: Client | None = None
         self.is_polling = False
         self.stop_event: Event = Event()
         self.is_connected = False
         self.polling_task: asyncio.Task | None = None
-
-    def init(self, config: Config):
-        self.config = config
-        self.logger = get_logger(f"kubemq.client.{self.config.queue_name}")
 
     async def start(self):
         self._connect()
@@ -53,9 +52,9 @@ class KubeMQClient(Connection):
         try:
             if not self.is_connected:
                 return
-            self.client.close()
+            # self.client.close()
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error disconnecting from Kubemq server, reason: {str(e)}"
             )
             raise KubeMQConnectionError(
@@ -76,7 +75,8 @@ class KubeMQClient(Connection):
         async def _process():
             while not self.stop_event.is_set():
                 try:
-                    poll_response = self.client.receive_queues_messages(
+                    poll_response = await asyncio.to_thread(
+                        self.client.receive_queues_messages,
                         channel=self.config.queue_name,
                         max_messages=1,
                         wait_timeout_in_seconds=self.config.poll_interval_seconds,
@@ -126,12 +126,15 @@ class KubeMQClient(Connection):
 
         async def _send_message():
             try:
-                result = self.client.send_queues_message(
+                self.logger.info("Sending message to kubemq")
+                result = await asyncio.to_thread(
+                    self.client.send_queues_message,
                     QueueMessage(
                         body=message,
                         channel=self.config.queue_name,
-                    )
+                    ),
                 )
+                self.logger.info("Message sent to kubemq")
                 if result.is_error:
                     self.logger.error(f"Error sending message: {result.error}")
             except Exception as e:

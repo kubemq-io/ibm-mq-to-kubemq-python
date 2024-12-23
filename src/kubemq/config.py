@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 
 class Config(BaseModel):
+    binding_name: Optional[str] = Field(default=None, description="Binding name")
+    binding_type: Optional[str] = Field(default=None, description="Binding type")
     address: str = Field(default=None, description="Address of the Kubemq server")
     queue_name: str = Field(default=None, description="Queue name")
     client_id: Optional[str] = Field(

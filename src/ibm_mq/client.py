@@ -1,7 +1,6 @@
 import asyncio
 import os
 from asyncio import Event
-from logging import Logger
 
 from src.bindings.connection import Connection
 
@@ -16,21 +15,17 @@ from src.ibm_mq.exceptions import IBMMQConnectionError
 
 
 class IBMMQClient(Connection):
-    def __init__(self):
-        self.config: Config | None = None
+    def __init__(self, config: Config):
+        self.config: Config = config
+        self.logger = get_logger(
+            f"ibmmq.{self.config.binding_name}.{self.config.binding_type}"
+        )
         self.queue_manager: QueueManager | None = None
-        self.logger: Logger | None = None
         self.queue: Queue | None = None
         self.is_polling = False
         self.stop_event: Event = Event()
         self.is_connected = False
         self.polling_task = None
-
-    def init(self, config: Config):
-        self.config = config
-        self.logger = get_logger(
-            f"ibmmq.client.{self.config.queue_manager}.{self.config.channel_name}.{self.config.queue_name}"
-        )
 
     async def start(self):
         self._connect()
@@ -141,15 +136,14 @@ class IBMMQClient(Connection):
 
             while not self.stop_event.is_set():
                 try:
-                    message = self.queue.get(None, md, gmo)
-
-                    # Call the callback function with the received message
+                    message = await asyncio.to_thread(self.queue.get, None, md, gmo)
                     try:
-                        print(f"Received message: {message.decode()}")
+                        self.logger.info("Received message, calling kubemq target")
                         await callback(message)
+                        self.logger.info("Messaged processed successfully")
                     except Exception as callback_error:
                         self.logger.error(
-                            f"Error in callback function: {str(callback_error)}"
+                            f"Error in sending to kubemq target: {str(callback_error)}"
                         )
                     md.MsgId = pymqi.CMQC.MQMI_NONE
                     md.CorrelId = pymqi.CMQC.MQCI_NONE
@@ -160,9 +154,7 @@ class IBMMQClient(Connection):
                         e.comp == pymqi.CMQC.MQCC_FAILED
                         and e.reason == pymqi.CMQC.MQRC_NO_MSG_AVAILABLE
                     ):
-                        print("No message available")
                         await asyncio.sleep(0.1)  # Yield to other coroutines
-
                     else:
                         self.logger.error(f"Error polling for message: {str(e)}")
                 except Exception as e:
@@ -177,9 +169,14 @@ class IBMMQClient(Connection):
         if not self.is_connected:
             self.logger.error("Not connected to IBM MQ")
             raise IBMMQConnectionError("Not connected to IBM MQ")
-        try:
-            self.queue.put(message)
-            self.logger.info(f"Sent message: {message}")
-        except Exception as e:
-            self.logger.error(f"Error sending message: {str(e)}")
-            raise IBMMQConnectionError(f"Error sending message, reason: {str(e)}")
+
+        async def _send_message():
+            try:
+                self.logger.info("Sending message to IBM MQ")
+                await asyncio.to_thread(self.queue.put, message)
+                self.logger.info("Message sent successfully")
+            except Exception as e:
+                self.logger.error(f"Error sending message: {str(e)}")
+                raise IBMMQConnectionError(f"Error sending message, reason: {str(e)}")
+
+        asyncio.create_task(_send_message())

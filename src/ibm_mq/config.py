@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 
 
 class Config(BaseModel):
+    binding_name: Optional[str] = Field(default=None, description="Binding name")
+    binding_type: Optional[str] = Field(default=None, description="Binding type")
     host_name: str = Field(default=None, description="Hostname of the IBM MQ server")
     port_number: int = Field(default=None, ge=1, le=65535, description="Port number")
     queue_manager: str = Field(default=None, description="Queue manager name")

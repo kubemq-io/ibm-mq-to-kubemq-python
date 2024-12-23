@@ -1,10 +1,7 @@
 import asyncio
-import os
-from asyncio import Event
 
 import anyio
 from src.common.log import get_logger
-from src.ibm_mq.client import IBMMQClient
 from src.kubemq.client import KubeMQClient
 from src.kubemq.config import Config
 
@@ -19,8 +16,8 @@ def get_client():
         client_id="kubemq-client",
         poll_interval_seconds=1,
     )
-    client: KubeMQClient = KubeMQClient()
-    client.init(config)
+    client: KubeMQClient = KubeMQClient(config)
+
     return client
 
 
@@ -36,11 +33,11 @@ async def main():
         await client.send_message(b"Hello World")
         # stop_event = Event()
         await client.poll(get_callback)
-        await asyncio.sleep(30)
+        await asyncio.sleep(5)
         # stop_event.set()
         await client.stop()
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {str(e)}")
 
 
 if __name__ == "__main__":

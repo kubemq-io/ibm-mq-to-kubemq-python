@@ -1,6 +1,4 @@
 import asyncio
-import os
-from asyncio import Event
 
 import anyio
 from src.common.log import get_logger
