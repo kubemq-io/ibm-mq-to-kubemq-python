@@ -1,10 +1,10 @@
-# github.com/go-task/task
+
 
 version: '3'
 
 vars:
   VERSION: v0.1.0
-  IMAGE_NAME: us-docker.pkg.dev/ji-portal-v2/justice-investments/justice-ai-platform
+  IMAGE_NAME: europe-docker.pkg.dev/kubemq/images/ibm-mq-connector
 
 tasks:
   default:
@@ -20,12 +20,12 @@ tasks:
 
   docker:
     cmds:
-      - gcloud config set project ji-portal-v2
+      - gcloud config set project kubemq
       - docker buildx build --platform linux/amd64 --load -t {{.IMAGE_NAME}}:{{.VERSION}} . --no-cache --push
       - docker pull {{.IMAGE_NAME}}:{{.VERSION}}
-      - docker tag {{.IMAGE_NAME}}:{{.VERSION}} {{.IMAGE_NAME}}:latest
-      - docker push {{.IMAGE_NAME}}:latest
-      - trivy image --exit-code 1 --severity CRITICAL,HIGH {{.IMAGE_NAME}}:{{.VERSION}}
+#      - docker tag {{.IMAGE_NAME}}:{{.VERSION}} {{.IMAGE_NAME}}:latest
+#      - docker push {{.IMAGE_NAME}}:latest
+#      - trivy image --exit-code 1 --severity CRITICAL,HIGH {{.IMAGE_NAME}}:{{.VERSION}}
 
   docker-push:
     cmds:
@@ -37,7 +37,7 @@ tasks:
   #      - trivy image --exit-code 1 --severity HIGH,CRITICAL python:3.13.0-alpine3.20
   docker-run:
     cmds:
-      - docker run -it -p 8080:8080 -v ${PWD}/config.yaml:/app/config.yaml -v ${PWD}/templates.yaml:/app/templates.yaml -v ${PWD}/local_store:/app/local_store -v $(pwd)/.env:/app/.env -v $(pwd)/gcp_creds.json:/app/gcp_creds.json {{.IMAGE_NAME}}:{{.VERSION}}
+      - docker run -it -v ${PWD}/config.yaml:/app/config.yaml {{.IMAGE_NAME}}:{{.VERSION}}
   deploy:
     dir: ./deployment
     cmds:

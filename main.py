@@ -1,5 +1,9 @@
 import asyncio
+import os
 import signal
+
+config_path = os.environ.get("CONFIG_PATH", "config.yaml")
+os.environ.setdefault("MQ_FILE_PATH", os.path.join(os.getcwd(), "mq_files/windows"))
 
 import anyio
 
@@ -23,7 +27,7 @@ async def main():
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, handle_signal)
         logger.info("Starting KubeMQ - IBM MQ bindings")
-        bindings = Bindings("config.yaml")
+        bindings = Bindings(config_path)
         bindings.init()
         await bindings.start()
         # Wait for shutdown signal instead of infinite loop

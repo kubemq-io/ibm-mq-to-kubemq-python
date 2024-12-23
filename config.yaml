@@ -2,7 +2,7 @@ bindings:
   - name: kubemq_to_ibm
     type: kubemq_to_ibm_mq
     source:
-      address: localhost:50000
+      address: host.docker.internal:50000
       queue_name: to_ibm
       client_id: kubemq-client
       poll_interval_seconds: 1
@@ -28,6 +28,6 @@ bindings:
       password: Passw0rd
       poll_interval_ms: 100
     target:
-      address: localhost:50000
+      address: host.docker.internal:50000
       queue_name: from_ibm
       client_id: kubemq-target

@@ -8,7 +8,7 @@ from src.common.log import get_logger
 
 class Bindings:
     def __init__(self, config_path: str):
-        self.logger = get_logger(f"binding_manager")
+        self.logger = get_logger("binding_manager")
         self.config = BindingsConfig.load(config_path)
         self.bindings: List[Binding] = []
 

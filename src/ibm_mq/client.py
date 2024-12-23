@@ -1,10 +1,9 @@
 import asyncio
-import os
 from asyncio import Event
 
 from src.bindings.connection import Connection
 
-os.environ.setdefault("MQ_FILE_PATH", "C:/Program Files (x86)/IBM/WebSphere MQ")
+
 import pymqi
 
 from src.common.log import get_logger
