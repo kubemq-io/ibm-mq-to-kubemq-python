@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Config(BaseModel):
@@ -16,7 +16,23 @@ class Config(BaseModel):
     poll_interval_ms: int = Field(
         default=100, ge=1, description="Poll interval in milliseconds"
     )
+    ssl: bool = Field(default=False, description="Use SSL")
+    ssl_cipher_spec: Optional[str] = Field(
+        default=None, description="SSL cipher specification"
+    )
+    key_repo_location: Optional[str] = Field(
+        default=None, description="Key repository location"
+    )
 
     @property
     def connection_string(self):
         return "%s(%s)" % (self.host_name, self.port_number)
+
+    @model_validator(mode="after")
+    def validate_ssl_fields(self):
+        if self.ssl:
+            if not self.ssl_cipher_spec:
+                raise ValueError("ssl_cipher_spec is required when ssl is True")
+            if not self.key_repo_location:
+                raise ValueError("key_repo_location is required when ssl is True")
+        return self

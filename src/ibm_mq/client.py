@@ -43,14 +43,27 @@ class IBMMQClient(Connection):
             cd.TransportType = pymqi.CMQC.MQXPT_TCP
 
             connect_options = pymqi.CMQC.MQCNO_HANDLE_SHARE_BLOCK
+            sco = None
+            if self.config.ssl:
+                cd.SSLCipherSpec = self.config.ssl_cipher_spec.encode("utf-8")
+                sco = pymqi.SCO()
+                sco.KeyRepository = self.config.key_repo_location.encode("utf-8")
+
             self.queue_manager = pymqi.QueueManager(name=None)
-            self.queue_manager.connect_with_options(
-                self.config.queue_manager,
-                cd=cd,
-                opts=connect_options,
-                user=self.config.username.encode("utf-8"),
-                password=self.config.password.encode("utf-8"),
-            )
+
+            connect_params = {
+                "name": self.config.queue_manager,
+                "cd": cd,
+                "opts": connect_options,
+                "user": self.config.username.encode("utf-8"),
+                "password": self.config.password.encode("utf-8"),
+            }
+
+            if sco is not None:
+                connect_params["sco"] = sco
+
+            self.queue_manager.connect_with_options(**connect_params)
+
         except Exception as e:
             self.logger.exception(f"Error Connecting to queue manager: {str(e)}")
             raise IBMMQConnectionError(
