@@ -1,15 +1,13 @@
 import asyncio
 import os
-import signal
 
-config_path = os.environ.get("CONFIG_PATH", "config.yaml")
 os.environ.setdefault("MQ_FILE_PATH", os.path.join(os.getcwd(), "mq_files/windows"))
-
+import signal
 import anyio
-
 from src.bindings.bindings import Bindings
 from src.common.log import get_logger
 
+config_path = os.environ.get("CONFIG_PATH", "config.yaml")
 logger = get_logger("main")
 shutdown_event = asyncio.Event()
 
