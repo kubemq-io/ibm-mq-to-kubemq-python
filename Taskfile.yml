@@ -23,9 +23,9 @@ tasks:
       - gcloud config set project kubemq
       - docker buildx build --platform linux/amd64 --load -t {{.IMAGE_NAME}}:{{.VERSION}} . --no-cache --push
       - docker pull {{.IMAGE_NAME}}:{{.VERSION}}
-#      - docker tag {{.IMAGE_NAME}}:{{.VERSION}} {{.IMAGE_NAME}}:latest
-#      - docker push {{.IMAGE_NAME}}:latest
-#      - trivy image --exit-code 1 --severity CRITICAL,HIGH {{.IMAGE_NAME}}:{{.VERSION}}
+      - docker tag {{.IMAGE_NAME}}:{{.VERSION}} {{.IMAGE_NAME}}:latest
+      - docker push {{.IMAGE_NAME}}:latest
+      - trivy image --exit-code 1 --severity CRITICAL,HIGH {{.IMAGE_NAME}}:{{.VERSION}}
 
   docker-push:
     cmds:
