@@ -1,0 +1,1 @@
+docker run -it -v ${PWD}/config.yaml:/app/config.yaml europe-docker.pkg.dev/kubemq/images/ibm-mq-connector:v0.1.0

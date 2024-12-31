@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubemq-ibmmq-connector
+  labels:
+    app: kubemq-ibmmq-connector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubemq-ibmmq-connector
+  template:
+    metadata:
+      labels:
+        app: kubemq-ibmmq-connector
+    spec:
+      containers:
+        - name: kubemq-ibmmq-connector
+          image: europe-docker.pkg.dev/kubemq/images/ibm-mq-connector:v0.1.0
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: config-volume
+          configMap:
+            name: kubemq-ibmmq-connector-config
+            items:
+              - key: CONFIG
+                path: config.yaml
