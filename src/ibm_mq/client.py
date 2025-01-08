@@ -80,36 +80,7 @@ class IBMMQClient(Connection):
         self.is_connected = True
         self.logger.info("Connected to IBM MQ")
 
-    def test(self):
-        import pymqi
 
-        queue_manager = "secureapphelm"
-        channel = "SECUREAPP.CHANNEL"
-        host = "84.200.100.229"
-        port = "32384"
-        queue_name = "SECUREAPP.QUEUE"
-        message = "Hello, IBM MQ from python!"
-
-        # Connection information
-        conn_info = f"{host}({port})"
-        open_options = pymqi.CMQC.MQOO_INPUT_AS_Q_DEF | pymqi.CMQC.MQOO_OUTPUT
-        # username / pwd
-        user = "admin"
-        password = "Passw0rd"
-
-        # connect with user and password
-        qmgr = pymqi.connect(queue_manager, channel, conn_info, user, password)
-
-        # put the message
-        queue = pymqi.Queue(qmgr, queue_name, open_options)
-        queue.put(message)
-
-        print(f"message successfully sent to {queue_name}.")
-        get_message = queue.get()
-        print(f"Received message: {get_message}")
-        # disconnect
-        queue.close()
-        qmgr.disconnect()
 
     def _disconnect(self):
         try:

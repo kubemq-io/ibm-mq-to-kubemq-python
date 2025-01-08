@@ -22,7 +22,7 @@ binding_kubemq_to_ibm = BindingConfig(
         poll_interval_seconds=1,
     ),
     target=IBMMQConfig(
-        host_name="84.200.100.229",
+        host_name="host",
         port_number=32384,
         channel_name="SECUREAPP.CHANNEL",
         queue_manager="secureapphelm",
@@ -37,7 +37,7 @@ binding_ibm_to_kubemq = BindingConfig(
     name="ibm_to_kubemq",
     type=BindingType.IBM_MQ_TO_KUBEMQ,
     source=IBMMQConfig(
-        host_name="84.200.100.229",
+        host_name="host",
         port_number=32384,
         channel_name="SECUREAPP.CHANNEL",
         queue_manager="secureapphelm",

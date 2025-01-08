@@ -11,7 +11,7 @@ logger = get_logger("main")
 
 def get_client():
     config: Config = Config(
-        host_name="84.200.100.229",
+        host_name="host",
         port_number=32384,
         channel_name="SECUREAPP.CHANNEL",
         queue_manager="secureapphelm",
