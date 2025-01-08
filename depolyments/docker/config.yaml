@@ -7,7 +7,7 @@ bindings:
       client_id: kubemq-client
       poll_interval_seconds: 1
     target:
-      host_name: 84.200.100.229
+      host_name: host
       port_number: 32384
       channel_name: SECUREAPP.CHANNEL
       queue_manager: secureapphelm
