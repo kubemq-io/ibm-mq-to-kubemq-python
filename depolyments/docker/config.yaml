@@ -19,7 +19,7 @@ bindings:
   - name: ibm_to_kubemq
     type: ibm_mq_to_kubemq
     source:
-      host_name: 84.200.100.229
+      host_name: host
       port_number: 32384
       channel_name: SECUREAPP.CHANNEL
       queue_manager: secureapphelm
