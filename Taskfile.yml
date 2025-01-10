@@ -3,7 +3,7 @@
 version: '3'
 
 vars:
-  VERSION: v0.1.0
+  VERSION: v0.2.0
   IMAGE_NAME: europe-docker.pkg.dev/kubemq/images/ibm-mq-connector
 
 tasks:
@@ -29,7 +29,6 @@ tasks:
 
   docker-push:
     cmds:
-      -
       - docker push {{.IMAGE_NAME}}:{{.VERSION}}
   trivy:
     cmds:
