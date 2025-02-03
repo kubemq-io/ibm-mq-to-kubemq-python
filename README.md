@@ -119,6 +119,8 @@ data:
           queue_name: YOUR.QUEUE
           username: your-username
           password: your-password
+          # message_format: MQHRF2
+          # message_ccsid: 1208
           poll_interval_ms: 100
       - name: ibm_to_kubemq
         type: ibm_mq_to_kubemq
@@ -158,7 +160,7 @@ spec:
     spec:
       containers:
         - name: kubemq-ibmmq-connector
-          image: europe-docker.pkg.dev/kubemq/images/ibm-mq-connector:v0.1.0
+          image: europe-docker.pkg.dev/kubemq/images/ibm-mq-connector:v0.4.0
           volumeMounts:
             - name: config-volume
               mountPath: /app/config.yaml

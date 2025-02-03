@@ -56,7 +56,9 @@ class IBMMQClient(Connection):
                 "cd": cd,
                 "opts": connect_options,
                 "user": self.config.username.encode("utf-8"),
-                "password": self.config.password.encode("utf-8"),
+                "password": (
+                    self.config.password.encode("utf-8") if self.config.password else ""
+                ),
             }
 
             if sco is not None:
@@ -79,8 +81,6 @@ class IBMMQClient(Connection):
             raise IBMMQConnectionError(f"Error Connecting to queue, reason: {str(e)}")
         self.is_connected = True
         self.logger.info("Connected to IBM MQ")
-
-
 
     def _disconnect(self):
         try:
@@ -156,7 +156,11 @@ class IBMMQClient(Connection):
         async def _send_message():
             try:
                 self.logger.info("Sending message to IBM MQ")
-                await asyncio.to_thread(self.queue.put, message)
+                md = pymqi.MD()
+                md.Format = self.config.get_md_format()
+                if self.config.message_ccsid > 0:
+                    md.CodedCharSetId = self.config.message_ccsid
+                await asyncio.to_thread(self.queue.put, message, md)
                 self.logger.info("Message sent successfully")
             except Exception as e:
                 self.logger.error(f"Error sending message: {str(e)}")

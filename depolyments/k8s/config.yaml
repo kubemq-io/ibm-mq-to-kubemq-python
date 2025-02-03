@@ -20,6 +20,8 @@ data:
           queue_name: SECUREAPP.QUEUE
           username: admin
           password: Passw0rd
+          # message_format: MQHRF2
+          # message_ccsid: 870
           poll_interval_ms: 100
     
       - name: ibm_to_kubemq
