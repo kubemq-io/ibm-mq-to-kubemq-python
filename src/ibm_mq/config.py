@@ -13,6 +13,8 @@ class Config(BaseModel):
     queue_name: str = Field(default=None, description="Queue name")
     username: str = Field(default=None, description="Username")
     password: Optional[str] = Field(default=None, description="Password")
+    message_ccsid: int = Field(default=1208, description="CCSID")
+    message
     poll_interval_ms: int = Field(
         default=100, ge=1, description="Poll interval in milliseconds"
     )
