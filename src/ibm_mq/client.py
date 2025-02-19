@@ -176,24 +176,25 @@ class IBMMQClient(Connection):
         if not self.is_connected:
             self.logger.error("Not connected to IBM MQ")
             raise IBMMQConnectionError("Not connected to IBM MQ")
+        message_str = message.decode("utf-8")
 
         async def _send_message():
             try:
                 self.logger.info("Sending message to IBM MQ")
                 if self.config.sender_mode == "rfh2":
-                    await asyncio.to_thread(self.queue.put_rfh2, message)
+                    await asyncio.to_thread(self.queue.put_rfh2, message_str)
                 elif self.config.sender_mode == "custom":
                     md = pymqi.MD()
                     md.Format = self.config.get_md_format()
                     if self.config.message_ccsid > 0:
                         md.CodedCharSetId = self.config.message_ccsid
-                    await asyncio.to_thread(self.queue.put, message, md)
+                    await asyncio.to_thread(self.queue.put, message_str, md)
                 elif (
                     self.config.sender_mode == "default"
                     or self.config.sender_mode is None
                     or self.config.sender_mode == ""
                 ):
-                    await asyncio.to_thread(self.queue.put, message)
+                    await asyncio.to_thread(self.queue.put, message_str)
                 else:
                     self.logger.error(
                         f"Invalid sender mode: {self.config.sender_mode} values can be 'rfh2', 'custom', 'default'"
