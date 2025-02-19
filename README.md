@@ -119,8 +119,11 @@ data:
           queue_name: YOUR.QUEUE
           username: your-username
           password: your-password
-          # message_format: MQHRF2
-          # message_ccsid: 1208
+          # type of sending mode: default, rfh2, custom
+          sender_mode: default
+          # when sender_mode is custom, you can set the following parameters
+          #message_format: MQHRF2
+          #message_ccsid: 1208
           poll_interval_ms: 100
       - name: ibm_to_kubemq
         type: ibm_mq_to_kubemq
@@ -132,6 +135,10 @@ data:
           queue_name: YOUR.QUEUE
           username: your-username
           password: your-password
+          # type of receiving mode: default, rfh2, no_rfh2
+          receiver_mode: default
+          # enable logging received messages
+          log_received_messages: true
           poll_interval_ms: 100
         target:
           address: kubemq-cluster-grpc:50000
