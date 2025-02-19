@@ -124,6 +124,7 @@ data:
           # when sender_mode is custom, you can set the following parameters
           #message_format: MQHRF2
           #message_ccsid: 1208
+          log_sent_messages: true
           poll_interval_ms: 100
       - name: ibm_to_kubemq
         type: ibm_mq_to_kubemq
@@ -139,6 +140,7 @@ data:
           receiver_mode: default
           # enable logging received messages
           log_received_messages: true
+          log_sent_messages: true
           poll_interval_ms: 100
         target:
           address: kubemq-cluster-grpc:50000

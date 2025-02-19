@@ -176,7 +176,10 @@ class IBMMQClient(Connection):
         if not self.is_connected:
             self.logger.error("Not connected to IBM MQ")
             raise IBMMQConnectionError("Not connected to IBM MQ")
+
         message_str = message.decode("utf-8")
+        if self.config.log_sent_messages:
+            self.logger.info(f"Sending message: {message_str}")
 
         async def _send_message():
             try:

@@ -20,6 +20,7 @@ class Config(BaseModel):
     log_received_messages: bool = Field(
         default=False, description="Log received messages"
     )
+    log_sent_messages: bool = Field(default=False, description="Log sent messages")
     sender_mode: Optional[str] = Field("default", description="Sender mode")
     poll_interval_ms: int = Field(
         default=100, ge=1, description="Poll interval in milliseconds"
