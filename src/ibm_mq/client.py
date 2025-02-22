@@ -107,6 +107,30 @@ class IBMMQClient(Connection):
                 "Callback function not provided"
             )  #     raise ValueError("Callback function not provided")
 
+        def extract_xml_payload(message_bytes):
+            # Convert bytes to string for processing
+            if isinstance(message_bytes, bytes):
+                message_str = message_bytes.decode("utf-8", errors="replace")
+            else:
+                message_str = str(message_bytes)
+
+            # Look for the XML declaration which starts the payload
+            xml_start_marker = "<?xml"
+            xml_start_index = message_str.find(xml_start_marker)
+
+            if xml_start_index == -1:
+                # No XML declaration found, return original message
+                return message_bytes
+
+            # Extract everything from the XML start to the end
+            xml_payload = message_str[xml_start_index:]
+
+            # Convert back to bytes for return
+            if isinstance(message_bytes, bytes):
+                return xml_payload.encode("utf-8")
+            else:
+                return xml_payload.encode("utf-8")
+
         async def _process():
             md = pymqi.MD()
             gmo = pymqi.GMO()
@@ -140,13 +164,14 @@ class IBMMQClient(Connection):
                         raise IBMMQConnectionError(
                             f"Invalid receiver mode: {self.config.receiver_mode} values can be 'rfh2', 'no_rfh2', 'default'"
                         )
+                    cleaned_message = extract_xml_payload(message)
                     if self.config.log_received_messages:
                         self.logger.info(
-                            f"Received Message:\n{gmo.__str__()}\n{md.__str__()}\nMessage:{message}"
+                            f"Received Message:\n{gmo.__str__()}\n{md.__str__()}\nMessage:{cleaned_message}"
                         )
                     try:
                         self.logger.info("Received message, calling kubemq target")
-                        await callback(message)
+                        await callback(cleaned_message)
                         self.logger.info("Messaged processed successfully")
                     except Exception as callback_error:
                         self.logger.error(

@@ -3,7 +3,7 @@
 version: '3'
 
 vars:
-  VERSION: v0.6.0
+  VERSION: v0.7.0
   IMAGE_NAME: europe-docker.pkg.dev/kubemq/images/ibm-mq-connector
 
 tasks:
