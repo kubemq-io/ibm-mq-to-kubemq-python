@@ -8,6 +8,7 @@ from src.ibm_mq.client import IBMMQClient
 from src.kubemq.client import KubeMQClient
 from src.kubemq.config import Config as KubeMQConfig
 from src.ibm_mq.config import Config as IBMMQConfig
+from src.bindings.metrics import BindingMetricsCollector
 
 
 class Binding:
@@ -16,6 +17,7 @@ class Binding:
         self.source: Connection | None = None
         self.target: Connection | None = None
         self.logger = get_logger(f"binding.{self.config.name}")
+        self.metrics_collector: BindingMetricsCollector | None = None
 
     def init(self):
         """
@@ -69,6 +71,14 @@ class Binding:
             msg = f"Error {target_err} initialization: {str(e)}"
             self.logger.error(msg)
             raise BindingConfigError(msg)
+            
+        # Initialize binding metrics collector
+        if self.source and self.target:
+            self.metrics_collector = BindingMetricsCollector(
+                self.config.name,
+                self.source.metrics,
+                self.target.metrics
+            )
 
     async def start(self):
         await self.target.start()
@@ -80,11 +90,15 @@ class Binding:
         await self.target.stop()
         
     def get_metrics(self) -> Dict[str, Any]:
-        """Get metrics from both source and target connections.
+        """Get metrics from both source and target connections and aggregate them.
         
         Returns:
-            Dict containing combined metrics from source and target connections
+            Dict containing aggregated metrics from source and target connections
         """
+        if self.metrics_collector:
+            return self.metrics_collector.get_metrics()
+        
+        # Fallback if metrics collector is not initialized
         metrics = {
             "binding_name": self.config.name,
             "binding_type": self.config.type.value,

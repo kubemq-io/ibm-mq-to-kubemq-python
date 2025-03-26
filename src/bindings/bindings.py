@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from src.bindings.binding import Binding
 from src.bindings.config import BindingsConfig
 from src.common.log import get_logger
+from src.bindings.metrics import SystemMetricsCollector
 
 
 class Bindings:
@@ -11,6 +12,7 @@ class Bindings:
         self.logger = get_logger("binding_manager")
         self.config = BindingsConfig.load(config_path)
         self.bindings: List[Binding] = []
+        self.system_metrics = SystemMetricsCollector()
 
     def init(self):
         try:
@@ -19,6 +21,10 @@ class Bindings:
                 new_binding = Binding(binding)
                 new_binding.init()
                 self.bindings.append(new_binding)
+                
+                # Add binding to system metrics if it has a metrics collector
+                if new_binding.metrics_collector:
+                    self.system_metrics.add_binding(new_binding.config.name, new_binding.metrics_collector)
         except Exception as e:
             raise Exception(f"Error initializing bindings: {str(e)}")
 
@@ -37,21 +43,13 @@ class Bindings:
         await asyncio.gather(*tasks)
         
     def get_all_metrics(self) -> Dict[str, Any]:
-        """Get metrics from all bindings.
+        """Get aggregated metrics from all bindings.
         
         Returns:
-            Dict containing metrics from all bindings, organized by binding name
+            Dict containing system-level metrics and metrics from all bindings
         """
-        metrics = {
-            "bindings_count": len(self.bindings),
-            "bindings": {}
-        }
-        
-        for binding in self.bindings:
-            binding_metrics = binding.get_metrics()
-            metrics["bindings"][binding.config.name] = binding_metrics
-            
-        return metrics
+        # Use system metrics collector for aggregated metrics
+        return self.system_metrics.get_metrics()
     
     async def check_all_health(self) -> Dict[str, Any]:
         """Check health of all bindings.

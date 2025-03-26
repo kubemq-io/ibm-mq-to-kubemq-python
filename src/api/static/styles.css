@@ -548,4 +548,164 @@ footer {
 
 .detail-item-value {
     font-weight: normal;
+}
+
+/* Add styles for system-level metrics card and section divider */
+.system-metrics-card {
+    background-color: #f5f9ff;
+    border-left: 4px solid #0062ff;
+}
+
+.system-title {
+    color: #0062ff;
+    font-weight: bold;
+}
+
+.section-divider {
+    width: 100%;
+    margin: 20px 0;
+    padding: 8px 0;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+}
+
+.section-divider h3 {
+    margin: 0;
+    color: #555;
+    font-size: 16px;
+}
+
+/* Metrics Container Styles */
+.metrics-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px;
+}
+
+.metrics-section {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: #fafafa;
+    transition: all 0.2s ease;
+}
+
+.metrics-section:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.section-header {
+    background-color: #f2f4f6;
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.section-header h4 {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--secondary-color);
+    margin: 0;
+}
+
+.metrics-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 15px;
+}
+
+.metric-item {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 15px;
+    background-color: white;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    min-width: 180px;
+    flex: 1 0 calc(25% - 12px);
+    max-width: calc(25% - 12px);
+    transition: all 0.2s ease;
+}
+
+.metric-item:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    border-color: var(--primary-color);
+}
+
+.metric-name {
+    font-size: 0.9rem;
+    color: #64748b;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.metric-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--secondary-color);
+}
+
+/* System metrics special styling */
+.system-metrics-section {
+    background-color: #f0f7ff;
+}
+
+.system-metrics-section .section-header {
+    background-color: #e6f0fa;
+}
+
+/* Component sections styling */
+.source-component-section {
+    background-color: #f0faf9;
+}
+
+.source-component-section .section-header {
+    background-color: #e6f6f5;
+}
+
+.target-component-section {
+    background-color: #f9f0fa;
+}
+
+.target-component-section .section-header {
+    background-color: #f5e6f6;
+}
+
+.binding-summary-section {
+    background-color: #f5f5f5;
+}
+
+.binding-summary-section .section-header {
+    background-color: #ebebeb;
+}
+
+/* No data message */
+.no-data {
+    padding: 15px;
+    text-align: center;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .metric-item {
+        flex: 1 0 calc(33.333% - 12px);
+        max-width: calc(33.333% - 12px);
+    }
+}
+
+@media (max-width: 992px) {
+    .metric-item {
+        flex: 1 0 calc(50% - 12px);
+        max-width: calc(50% - 12px);
+    }
+}
+
+@media (max-width: 576px) {
+    .metric-item {
+        flex: 1 0 100%;
+        max-width: 100%;
+    }
 } 

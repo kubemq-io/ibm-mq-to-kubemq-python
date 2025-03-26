@@ -345,58 +345,57 @@ class IBMMQClient(Connection):
         return xml_payload.encode("utf-8")
 
     async def poll(self, callback: Callable[[bytes], Coroutine[Any, Any, None]]) -> Task:
-        """Start polling for messages from the IBM MQ queue.
-        
-        This method initiates an asynchronous polling loop that continuously
-        checks for new messages on the configured queue. When a message is
-        received, it processes it and passes it to the provided callback
-        function. If the connection is broken, it automatically attempts
-        to reconnect.
+        """Poll for messages from IBM MQ and process them.
         
         Args:
-            callback: Asynchronous function to call with received messages
+            callback: Function to call with each received message
             
         Returns:
-            asyncio.Task: The polling task that was created
-            
-        Raises:
-            IBMMQConnectionError: If not connected to IBM MQ or for invalid configurations
+            Asyncio task that is running the polling
         """
-        if not self.is_connected:
-            self.logger.error("Not connected to IBM MQ")
-            raise IBMMQConnectionError("Not connected to IBM MQ")
-        if callback is None:
-            self.logger.error("Callback function not provided")
-            # raise ValueError("Callback function not provided")
-
+        # Reset polling state
+        self.should_stop_polling = False
+        self.is_polling = True
+        self.logger.info("Starting to poll for messages")
+        
+        # Clean up any existing task
+        if hasattr(self, 'polling_task') and self.polling_task and not self.polling_task.done():
+            self.logger.warning("Existing polling task found, cancelling it")
+            self.polling_task.cancel()
+        
         async def _process() -> None:
-            """Internal processing function that handles message polling.
+            connection_broken = False
             
-            This function implements the main polling loop which:
-            - Checks for and handles disconnections by attempting to reconnect
-            - Polls for messages using the configured receiver mode
-            - Processes received messages and passes them to the callback
-            - Handles various error conditions that may occur during polling
-            """
-            self.is_polling = True
-            connection_broken: bool = False
-            
-            # Get the appropriate receiver strategy based on the configuration
-            try:
-                receiver_strategy = get_receiver_strategy(self.config.receiver_mode)
-            except ValueError as e:
-                self.logger.error(str(e))
-                raise IBMMQConnectionError(str(e))
-            
-            while not self.stop_event.is_set():
-                if not self.is_connected or connection_broken:
+            while self.is_polling and not self.should_stop_polling:
+                # If connection is broken, attempt to reconnect
+                if connection_broken or not self.is_connected:
+                    self.logger.warning("Connection is broken or not established, attempting to reconnect")
+                    self.transition_to_reconnecting()
                     reconnected = await self._reconnect()
                     if not reconnected:
-                        # If reconnection failed, continue to next iteration and try again
+                        self.logger.error("Failed to reconnect, retrying after delay")
+                        await asyncio.sleep(self.config.reconnect_delay_sec)
                         continue
-                    connection_broken = False
-                    
+                    else:
+                        connection_broken = False
+
+                # Reset the connection_broken flag if we got here
                 try:
+                    # Get an appropriate receiver strategy based on the configuration
+                    try:
+                        receiver_strategy = get_receiver_strategy(self.config.receiver_mode)
+                    except ValueError as e:
+                        self.logger.error(str(e))
+                        self.metrics.track_error(
+                            ErrorCategory.CONFIGURATION, 
+                            f"Invalid receiver mode: {str(e)}",
+                            is_send=False
+                        )
+                        # Configuration errors need manual intervention, so sleep longer
+                        await asyncio.sleep(5.0)
+                        continue
+                    
+                    # Prepare message descriptor and get-message options
                     md: pymqi.MD = pymqi.MD()
                     gmo: pymqi.GMO = pymqi.GMO()
                     gmo.Options = pymqi.CMQC.MQGMO_WAIT | pymqi.CMQC.MQGMO_FAIL_IF_QUIESCING
@@ -429,8 +428,8 @@ class IBMMQClient(Connection):
                             await callback(cleaned_message)
                             callback_duration_ms = (time.time() - callback_start_time) * 1000
                             
-                            # Track successful message receive
-                            self.metrics.track_message_received(receive_duration_ms)
+                            # Track successful message receive with message size
+                            self.metrics.track_message_received(len(cleaned_message))
                             self.logger.info("Messaged processed successfully")
                         except Exception as callback_error:
                             self.logger.error(
@@ -439,7 +438,8 @@ class IBMMQClient(Connection):
                             self.last_error = callback_error
                             self.metrics.track_error(
                                 ErrorCategory.RECEIVE, 
-                                f"Error processing received message: {str(callback_error)}"
+                                f"Error processing received message: {str(callback_error)}",
+                                is_send=False
                             )
                         
                         # Reset message descriptors for next get
@@ -466,7 +466,8 @@ class IBMMQClient(Connection):
                             self.last_error = e
                             self.metrics.track_error(
                                 ErrorCategory.CONNECTION, 
-                                f"Connection error while polling: {error_msg}"
+                                f"Connection error while polling: {error_msg}",
+                                is_send=False
                             )
                         
                         elif error_type == ErrorType.SHUTDOWN:
@@ -477,7 +478,8 @@ class IBMMQClient(Connection):
                             self.last_error = e
                             self.metrics.track_error(
                                 ErrorCategory.CONNECTION, 
-                                f"Queue manager shutting down: {error_msg}"
+                                f"Queue manager shutting down: {error_msg}",
+                                is_send=False
                             )
                             await asyncio.sleep(retry_rec["retry_delay"])
                         
@@ -487,7 +489,8 @@ class IBMMQClient(Connection):
                             self.last_error = e
                             self.metrics.track_error(
                                 ErrorCategory.RECEIVE, 
-                                f"Error polling for message: {error_msg}"
+                                f"Error polling for message: {error_msg}",
+                                is_send=False
                             )
                             await asyncio.sleep(1.0)  # Slightly longer delay for permanent errors
                             
@@ -496,7 +499,8 @@ class IBMMQClient(Connection):
                         self.last_error = e
                         self.metrics.track_error(
                             ErrorCategory.UNKNOWN, 
-                            f"Unexpected error polling for message: {str(e)}"
+                            f"Unexpected error polling for message: {str(e)}",
+                            is_send=False
                         )
                         # Mark connection as broken for most exceptions to trigger reconnection
                         if self.is_connected:
@@ -507,7 +511,8 @@ class IBMMQClient(Connection):
                     self.last_error = e
                     self.metrics.track_error(
                         ErrorCategory.UNKNOWN, 
-                        f"Error in polling loop: {str(e)}"
+                        f"Error in polling loop: {str(e)}",
+                        is_send=False
                     )
                     # Mark connection as broken for most exceptions to trigger reconnection
                     if self.is_connected:
@@ -565,7 +570,8 @@ class IBMMQClient(Connection):
                     self.logger.error(str(e))
                     self.metrics.track_error(
                         ErrorCategory.CONFIGURATION, 
-                        f"Invalid sender mode: {str(e)}"
+                        f"Invalid sender mode: {str(e)}",
+                        is_send=True
                     )
                     raise IBMMQConnectionError(str(e))
                 
@@ -574,7 +580,8 @@ class IBMMQClient(Connection):
                 start_time = time.time()
                 await sender_strategy.send_message(self.queue, message_str, self.config)
                 send_duration_ms = (time.time() - start_time) * 1000
-                self.metrics.track_message_sent(send_duration_ms)
+                # Track message sent with message size in bytes
+                self.metrics.track_message_sent(len(message))
                 self.logger.debug(f"Message sent to IBM MQ in {send_duration_ms:.2f}ms")
                 
             except pymqi.MQMIError as e:
@@ -583,7 +590,7 @@ class IBMMQClient(Connection):
                 self.logger.error(f"Error sending message to IBM MQ: {error_msg} (Reason: {e.reason})")
                 
                 # Track the error
-                self.metrics.track_error(ErrorCategory.SEND, f"Error sending message: {error_msg}")
+                self.metrics.track_error(ErrorCategory.SEND, f"Error sending message: {error_msg}", is_send=True)
                 
                 # For connection-related errors, attempt reconnection
                 if error_type == ErrorType.CONNECTION or error_type == ErrorType.SHUTDOWN:
@@ -597,8 +604,8 @@ class IBMMQClient(Connection):
                 raise IBMMQConnectionError(f"Error sending message to IBM MQ: {error_msg}")
             except Exception as e:
                 self.logger.error(f"Unexpected error sending message to IBM MQ: {str(e)}")
-                self.transition_to_disconnected(f"Unexpected error during send: {str(e)}")
-                raise IBMMQConnectionError(f"Unexpected error sending message: {str(e)}")
+                self.metrics.track_error(ErrorCategory.UNKNOWN, f"Unexpected error sending message: {str(e)}", is_send=True)
+                raise IBMMQConnectionError(f"Unexpected error sending message to IBM MQ: {str(e)}")
 
         await _send_message()
 
