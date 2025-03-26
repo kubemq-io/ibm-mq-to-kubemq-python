@@ -1,5 +1,6 @@
 import asyncio
-from asyncio import Event
+from asyncio import Event, Task
+from typing import Optional, Callable, Any, Coroutine, Union
 
 from src.bindings.connection import Connection
 
@@ -14,30 +15,75 @@ from src.ibm_mq.exceptions import IBMMQConnectionError
 
 
 class IBMMQClient(Connection):
-    def __init__(self, config: Config):
+    """IBM MQ client implementation for connecting to and interacting with IBM MQ services.
+    
+    This class handles the complete lifecycle of IBM MQ connections including establishing
+    connections, sending and receiving messages, and handling reconnection in case of
+    connection failures. It implements the Connection interface to provide standardized
+    interaction with the messaging system.
+    
+    Attributes:
+        config (Config): Configuration for the IBM MQ connection and messaging
+        logger: Logger instance for this client
+        queue_manager (QueueManager): IBM MQ queue manager connection
+        queue (Queue): IBM MQ queue for sending/receiving messages
+        is_polling (bool): Flag indicating if the client is actively polling for messages
+        stop_event (Event): Event to signal stopping of polling activities
+        is_connected (bool): Connection status flag
+        polling_task: Asyncio task for message polling
+        reconnect_attempts (int): Counter for reconnection attempts
+        max_reconnect_attempts (int): Maximum number of reconnection attempts (0 = unlimited)
+    """
+    def __init__(self, config: Config) -> None:
+        """Initialize the IBM MQ client with the provided configuration.
+        
+        Args:
+            config (Config): Configuration object containing IBM MQ connection parameters
+        """
         self.config: Config = config
         self.logger = get_logger(
             f"ibmmq.{self.config.binding_name}.{self.config.binding_type}"
         )
-        self.queue_manager: QueueManager | None = None
-        self.queue: Queue | None = None
-        self.is_polling = False
+        self.queue_manager: Optional[QueueManager] = None
+        self.queue: Optional[Queue] = None
+        self.is_polling: bool = False
         self.stop_event: Event = Event()
-        self.is_connected = False
-        self.polling_task = None
-        self.reconnect_attempts = 0
-        self.max_reconnect_attempts = 0  # 0 means unlimited retries
+        self.is_connected: bool = False
+        self.polling_task: Optional[Task] = None
+        self.reconnect_attempts: int = 0
+        self.max_reconnect_attempts: int = 0  # 0 means unlimited retries
         
 
-    async def start(self):
+    async def start(self) -> None:
+        """Start the IBM MQ client by establishing a connection to the MQ server.
+        
+        This method initializes the connection to IBM MQ using the configured parameters.
+        
+        Raises:
+            IBMMQConnectionError: If connection to IBM MQ fails
+        """
         self._connect()
 
-    async def stop(self):
+    async def stop(self) -> None:
+        """Stop the IBM MQ client and release all resources.
+        
+        This method signals any polling operations to stop and closes the connection
+        to IBM MQ, ensuring proper cleanup of resources.
+        """
         if self.is_polling:
             self.stop_event.set()
         self._disconnect()
 
-    def _connect(self):
+    def _connect(self) -> None:
+        """Establish a connection to the IBM MQ server.
+        
+        This method sets up the connection to the IBM MQ queue manager and opens
+        the specified queue for sending/receiving messages, handling various
+        connection parameters including SSL if configured.
+        
+        Raises:
+            IBMMQConnectionError: If connection to queue manager or queue fails
+        """
         try:
             # If already connected, disconnect first
             if self.is_connected:
@@ -50,7 +96,7 @@ class IBMMQClient(Connection):
             cd.TransportType = pymqi.CMQC.MQXPT_TCP
 
             connect_options = pymqi.CMQC.MQCNO_HANDLE_SHARE_BLOCK
-            sco = None
+            sco: Optional[pymqi.SCO] = None
             if self.config.ssl:
                 cd.SSLCipherSpec = self.config.ssl_cipher_spec.encode("utf-8")
                 sco = pymqi.SCO()
@@ -58,7 +104,7 @@ class IBMMQClient(Connection):
 
             self.queue_manager = pymqi.QueueManager(name=None)
 
-            connect_params = {
+            connect_params: dict[str, Any] = {
                 "name": self.config.queue_manager,
                 "cd": cd,
                 "opts": connect_options,
@@ -90,7 +136,12 @@ class IBMMQClient(Connection):
         self.reconnect_attempts = 0  # Reset reconnect attempts on successful connection
         self.logger.info("Connected to IBM MQ")
 
-    def _disconnect(self):
+    def _disconnect(self) -> None:
+        """Disconnect from the IBM MQ server and clean up resources.
+        
+        This method closes the queue and disconnects from the queue manager,
+        ensuring that resources are properly released regardless of errors.
+        """
         try:
             if not self.is_connected:
                 return
@@ -109,15 +160,23 @@ class IBMMQClient(Connection):
             self.is_connected = False
             self.logger.info("Disconnected from IBM MQ")
 
-    async def _reconnect(self):
-        """Attempt to reconnect to IBM MQ with the configured delay."""
+    async def _reconnect(self) -> bool:
+        """Attempt to reconnect to IBM MQ with the configured delay.
+        
+        This method implements the reconnection logic with a configurable delay
+        between attempts. It tracks the number of reconnection attempts and
+        can be limited by the max_reconnect_attempts setting.
+        
+        Returns:
+            bool: True if reconnection was successful, False otherwise
+        """
         if self.max_reconnect_attempts > 0 and self.reconnect_attempts >= self.max_reconnect_attempts:
             self.logger.error(f"Maximum reconnection attempts ({self.max_reconnect_attempts}) reached. Giving up.")
             self.stop_event.set()
             return False
 
         # Get delay from config
-        delay = self.config.reconnect_delay
+        delay: int = self.config.reconnect_delay
         
         self.reconnect_attempts += 1
         self.logger.info(f"Attempting to reconnect (attempt {self.reconnect_attempts}) in {delay} second(s)...")
@@ -132,7 +191,24 @@ class IBMMQClient(Connection):
             self.logger.error(f"Failed to reconnect: {str(e)}")
             return False
 
-    async def poll(self, callback):
+    async def poll(self, callback: Callable[[bytes], Coroutine[Any, Any, None]]) -> Task:
+        """Start polling for messages from the IBM MQ queue.
+        
+        This method initiates an asynchronous polling loop that continuously
+        checks for new messages on the configured queue. When a message is
+        received, it processes it and passes it to the provided callback
+        function. If the connection is broken, it automatically attempts
+        to reconnect.
+        
+        Args:
+            callback: Asynchronous function to call with received messages
+            
+        Returns:
+            asyncio.Task: The polling task that was created
+            
+        Raises:
+            IBMMQConnectionError: If not connected to IBM MQ or for invalid configurations
+        """
         if not self.is_connected:
             self.logger.error("Not connected to IBM MQ")
             raise IBMMQConnectionError("Not connected to IBM MQ")
@@ -141,7 +217,17 @@ class IBMMQClient(Connection):
                 "Callback function not provided"
             )  #     raise ValueError("Callback function not provided")
 
-        def extract_xml_payload(message_bytes):
+        def extract_xml_payload(message_bytes: Union[bytes, str]) -> bytes:
+            """Extract XML payload from a message.
+            
+            This function looks for XML content in a message and extracts it if found.
+            
+            Args:
+                message_bytes: Message content which may contain XML
+                
+            Returns:
+                bytes: XML content if found, or the original message
+            """
             # Convert bytes to string for processing
             if isinstance(message_bytes, bytes):
                 message_str = message_bytes.decode("utf-8", errors="replace")
@@ -154,20 +240,27 @@ class IBMMQClient(Connection):
 
             if xml_start_index == -1:
                 # No XML declaration found, return original message
-                return message_bytes
+                if isinstance(message_bytes, bytes):
+                    return message_bytes
+                return message_bytes.encode("utf-8")
 
             # Extract everything from the XML start to the end
             xml_payload = message_str[xml_start_index:]
 
             # Convert back to bytes for return
-            if isinstance(message_bytes, bytes):
-                return xml_payload.encode("utf-8")
-            else:
-                return xml_payload.encode("utf-8")
+            return xml_payload.encode("utf-8")
 
-        async def _process():
+        async def _process() -> None:
+            """Internal processing function that handles message polling.
+            
+            This function implements the main polling loop which:
+            - Checks for and handles disconnections by attempting to reconnect
+            - Polls for messages using the configured receiver mode
+            - Processes received messages and passes them to the callback
+            - Handles various error conditions that may occur during polling
+            """
             self.is_polling = True
-            connection_broken = False
+            connection_broken: bool = False
             
             while not self.stop_event.is_set():
                 if not self.is_connected or connection_broken:
@@ -178,8 +271,8 @@ class IBMMQClient(Connection):
                     connection_broken = False
                     
                 try:
-                    md = pymqi.MD()
-                    gmo = pymqi.GMO()
+                    md: pymqi.MD = pymqi.MD()
+                    gmo: pymqi.GMO = pymqi.GMO()
                     gmo.Options = pymqi.CMQC.MQGMO_WAIT | pymqi.CMQC.MQGMO_FAIL_IF_QUIESCING
                     gmo.WaitInterval = self.config.poll_interval_ms
 
@@ -190,6 +283,7 @@ class IBMMQClient(Connection):
                         setattr(self, 'poll_log_shown', True)
                         
                     try:
+                        message: Union[bytes, str]
                         if self.config.receiver_mode == "rfh2":
                             message = await asyncio.to_thread(
                                 self.queue.get_rfh2, None, md, gmo
@@ -211,7 +305,7 @@ class IBMMQClient(Connection):
                             raise IBMMQConnectionError(
                                 f"Invalid receiver mode: {self.config.receiver_mode} values can be 'rfh2', 'no_rfh2', 'default'"
                             )
-                        cleaned_message = extract_xml_payload(message)
+                        cleaned_message: bytes = extract_xml_payload(message)
                         if self.config.log_received_messages:
                             self.logger.info(
                                 f"Received Message:\n{gmo.__str__()}\n{md.__str__()}\nMessage:{cleaned_message}"
@@ -253,22 +347,42 @@ class IBMMQClient(Connection):
         self.polling_task = asyncio.create_task(_process())
         return self.polling_task
 
-    async def send_message(self, message: bytes):
+    async def send_message(self, message: bytes) -> None:
+        """Send a message to the IBM MQ queue.
+        
+        This method sends a message to the configured IBM MQ queue using the
+        specified sender mode. If the connection is broken during the send,
+        it attempts to reconnect and retry the send operation.
+        
+        Args:
+            message (bytes): The message content to send to the queue
+            
+        Raises:
+            IBMMQConnectionError: If not connected to IBM MQ, the connection breaks,
+                                 or for any other error during message sending
+        """
         if not self.is_connected:
             self.logger.error("Not connected to IBM MQ")
             raise IBMMQConnectionError("Not connected to IBM MQ")
 
-        message_str = message.decode("utf-8")
+        message_str: str = message.decode("utf-8")
         if self.config.log_sent_messages:
             self.logger.info(f"Sending message: {message_str}")
 
-        async def _send_message():
+        async def _send_message() -> None:
+            """Internal function that handles the actual message sending.
+            
+            This function implements the sending logic which:
+            - Determines the appropriate sending method based on the configured sender mode
+            - Handles connection errors with reconnection attempts
+            - Logs the result of the send operation
+            """
             try:
                 self.logger.info("Sending message to IBM MQ")
                 if self.config.sender_mode == "rfh2":
                     await asyncio.to_thread(self.queue.put_rfh2, message_str)
                 elif self.config.sender_mode == "custom":
-                    md = pymqi.MD()
+                    md: pymqi.MD = pymqi.MD()
                     md.Format = self.config.get_md_format()
                     if self.config.message_ccsid > 0:
                         md.CodedCharSetId = self.config.message_ccsid
