@@ -1,7 +1,7 @@
 import asyncio
 import os
 from asyncio import Event
-
+from typing import Dict, Any
 
 from kubemq.queues import Client, QueueMessage
 
@@ -141,3 +141,19 @@ class KubeMQClient(Connection):
                 self.logger.error(f"Error sending message: {str(e)}")
 
         asyncio.create_task(_send_message())
+
+    async def check_health(self) -> Dict[str, Any]:
+        """Check the health of the connection.
+
+        Returns:
+            Dict containing health status information
+        """
+        pass
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get all metrics for this connection.
+
+        Returns:
+            Dict containing all metrics data
+        """
+        pass
