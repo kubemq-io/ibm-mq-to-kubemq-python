@@ -1,0 +1,1 @@
+"""API routes for health and metrics endpoints.""" 

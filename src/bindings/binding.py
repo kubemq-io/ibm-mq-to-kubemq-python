@@ -1,3 +1,5 @@
+from typing import Dict, Any
+
 from src.bindings.config import BindingConfig, BindingType
 from src.bindings.connection import Connection
 from src.bindings.exceptions import BindingConfigError
@@ -76,3 +78,62 @@ class Binding:
     async def stop(self):
         await self.source.stop()
         await self.target.stop()
+        
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get metrics from both source and target connections.
+        
+        Returns:
+            Dict containing combined metrics from source and target connections
+        """
+        metrics = {
+            "binding_name": self.config.name,
+            "binding_type": self.config.type.value,
+            "source": None,
+            "target": None
+        }
+        
+        if self.source:
+            metrics["source"] = self.source.get_metrics()
+            
+        if self.target:
+            metrics["target"] = self.target.get_metrics()
+            
+        return metrics
+        
+    async def check_health(self) -> Dict[str, Any]:
+        """Check health of both source and target connections.
+        
+        Returns:
+            Dict containing health information for the binding
+        """
+        health = {
+            "binding_name": self.config.name,
+            "binding_type": self.config.type.value,
+            "status": "healthy",
+            "source": None,
+            "target": None
+        }
+        
+        try:
+            if self.source:
+                source_health = await self.source.check_health()
+                health["source"] = source_health
+                if source_health["status"] != "healthy":
+                    health["status"] = "unhealthy"
+        except Exception as e:
+            self.logger.error(f"Error checking source health: {str(e)}")
+            health["status"] = "unhealthy"
+            health["source"] = {"status": "unhealthy", "error": str(e)}
+            
+        try:
+            if self.target:
+                target_health = await self.target.check_health()
+                health["target"] = target_health
+                if target_health["status"] != "healthy":
+                    health["status"] = "unhealthy"
+        except Exception as e:
+            self.logger.error(f"Error checking target health: {str(e)}")
+            health["status"] = "unhealthy"
+            health["target"] = {"status": "unhealthy", "error": str(e)}
+            
+        return health
