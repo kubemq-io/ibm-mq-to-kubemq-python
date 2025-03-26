@@ -9,6 +9,7 @@ import pymqi
 
 from src.common.log import get_logger
 from src.ibm_mq.config import Config
+from src.ibm_mq.strategies import get_receiver_strategy, get_sender_strategy
 from pymqi import QueueManager, Queue
 
 from src.ibm_mq.exceptions import IBMMQConnectionError
@@ -191,6 +192,39 @@ class IBMMQClient(Connection):
             self.logger.error(f"Failed to reconnect: {str(e)}")
             return False
 
+    def extract_xml_payload(self, message_bytes: Union[bytes, str]) -> bytes:
+        """Extract XML payload from a message.
+        
+        This function looks for XML content in a message and extracts it if found.
+        
+        Args:
+            message_bytes: Message content which may contain XML
+            
+        Returns:
+            bytes: XML content if found, or the original message
+        """
+        # Convert bytes to string for processing
+        if isinstance(message_bytes, bytes):
+            message_str = message_bytes.decode("utf-8", errors="replace")
+        else:
+            message_str = str(message_bytes)
+
+        # Look for the XML declaration which starts the payload
+        xml_start_marker = "<?xml"
+        xml_start_index = message_str.find(xml_start_marker)
+
+        if xml_start_index == -1:
+            # No XML declaration found, return original message
+            if isinstance(message_bytes, bytes):
+                return message_bytes
+            return message_bytes.encode("utf-8")
+
+        # Extract everything from the XML start to the end
+        xml_payload = message_str[xml_start_index:]
+
+        # Convert back to bytes for return
+        return xml_payload.encode("utf-8")
+
     async def poll(self, callback: Callable[[bytes], Coroutine[Any, Any, None]]) -> Task:
         """Start polling for messages from the IBM MQ queue.
         
@@ -213,42 +247,8 @@ class IBMMQClient(Connection):
             self.logger.error("Not connected to IBM MQ")
             raise IBMMQConnectionError("Not connected to IBM MQ")
         if callback is None:
-            self.logger.error(
-                "Callback function not provided"
-            )  #     raise ValueError("Callback function not provided")
-
-        def extract_xml_payload(message_bytes: Union[bytes, str]) -> bytes:
-            """Extract XML payload from a message.
-            
-            This function looks for XML content in a message and extracts it if found.
-            
-            Args:
-                message_bytes: Message content which may contain XML
-                
-            Returns:
-                bytes: XML content if found, or the original message
-            """
-            # Convert bytes to string for processing
-            if isinstance(message_bytes, bytes):
-                message_str = message_bytes.decode("utf-8", errors="replace")
-            else:
-                message_str = str(message_bytes)
-
-            # Look for the XML declaration which starts the payload
-            xml_start_marker = "<?xml"
-            xml_start_index = message_str.find(xml_start_marker)
-
-            if xml_start_index == -1:
-                # No XML declaration found, return original message
-                if isinstance(message_bytes, bytes):
-                    return message_bytes
-                return message_bytes.encode("utf-8")
-
-            # Extract everything from the XML start to the end
-            xml_payload = message_str[xml_start_index:]
-
-            # Convert back to bytes for return
-            return xml_payload.encode("utf-8")
+            self.logger.error("Callback function not provided")
+            # raise ValueError("Callback function not provided")
 
         async def _process() -> None:
             """Internal processing function that handles message polling.
@@ -261,6 +261,13 @@ class IBMMQClient(Connection):
             """
             self.is_polling = True
             connection_broken: bool = False
+            
+            # Get the appropriate receiver strategy based on the configuration
+            try:
+                receiver_strategy = get_receiver_strategy(self.config.receiver_mode)
+            except ValueError as e:
+                self.logger.error(str(e))
+                raise IBMMQConnectionError(str(e))
             
             while not self.stop_event.is_set():
                 if not self.is_connected or connection_broken:
@@ -283,29 +290,11 @@ class IBMMQClient(Connection):
                         setattr(self, 'poll_log_shown', True)
                         
                     try:
-                        message: Union[bytes, str]
-                        if self.config.receiver_mode == "rfh2":
-                            message = await asyncio.to_thread(
-                                self.queue.get_rfh2, None, md, gmo
-                            )
-                        elif self.config.receiver_mode == "no_rfh2":
-                            message = await asyncio.to_thread(
-                                self.queue.get_no_rfh2, None, md, gmo
-                            )
-                        elif (
-                            self.config.receiver_mode == "default"
-                            or self.config.receiver_mode is None
-                            or self.config.receiver_mode == ""
-                        ):
-                            message = await asyncio.to_thread(self.queue.get, None, md, gmo)
-                        else:
-                            self.logger.error(
-                                f"Invalid receiver mode: {self.config.receiver_mode} values can be 'rfh2', 'no_rfh2', 'default'"
-                            )
-                            raise IBMMQConnectionError(
-                                f"Invalid receiver mode: {self.config.receiver_mode} values can be 'rfh2', 'no_rfh2', 'default'"
-                            )
-                        cleaned_message: bytes = extract_xml_payload(message)
+                        # Use the strategy to receive a message
+                        message = await receiver_strategy.receive_message(self.queue, md, gmo)
+                        
+                        # Process the message
+                        cleaned_message: bytes = self.extract_xml_payload(message)
                         if self.config.log_received_messages:
                             self.logger.info(
                                 f"Received Message:\n{gmo.__str__()}\n{md.__str__()}\nMessage:{cleaned_message}"
@@ -318,6 +307,8 @@ class IBMMQClient(Connection):
                             self.logger.error(
                                 f"Error in sending to kubemq target: {str(callback_error)}"
                             )
+                        
+                        # Reset message descriptors for next get
                         md.MsgId = pymqi.CMQC.MQMI_NONE
                         md.CorrelId = pymqi.CMQC.MQCI_NONE
                         md.GroupId = pymqi.CMQC.MQGI_NONE
@@ -378,29 +369,18 @@ class IBMMQClient(Connection):
             - Logs the result of the send operation
             """
             try:
+                # Get the appropriate sender strategy based on the configuration
+                try:
+                    sender_strategy = get_sender_strategy(self.config.sender_mode)
+                except ValueError as e:
+                    self.logger.error(str(e))
+                    raise IBMMQConnectionError(str(e))
+                
+                # Use the strategy to send the message
                 self.logger.info("Sending message to IBM MQ")
-                if self.config.sender_mode == "rfh2":
-                    await asyncio.to_thread(self.queue.put_rfh2, message_str)
-                elif self.config.sender_mode == "custom":
-                    md: pymqi.MD = pymqi.MD()
-                    md.Format = self.config.get_md_format()
-                    if self.config.message_ccsid > 0:
-                        md.CodedCharSetId = self.config.message_ccsid
-                    await asyncio.to_thread(self.queue.put, message_str, md)
-                elif (
-                    self.config.sender_mode == "default"
-                    or self.config.sender_mode is None
-                    or self.config.sender_mode == ""
-                ):
-                    await asyncio.to_thread(self.queue.put, message_str)
-                else:
-                    self.logger.error(
-                        f"Invalid sender mode: {self.config.sender_mode} values can be 'rfh2', 'custom', 'default'"
-                    )
-                    raise IBMMQConnectionError(
-                        f"Invalid sender mode: {self.config.sender_mode} values can be 'rfh2', 'custom', 'default'"
-                    )
+                await sender_strategy.send_message(self.queue, message_str, self.config)
                 self.logger.info("Message sent successfully")
+                
             except pymqi.MQMIError as e:
                 if e.reason == pymqi.CMQC.MQRC_CONNECTION_BROKEN:
                     self.logger.warning("Connection broken while sending message. Will attempt to reconnect.")
