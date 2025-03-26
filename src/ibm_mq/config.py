@@ -25,6 +25,9 @@ class Config(BaseModel):
     poll_interval_ms: int = Field(
         default=100, ge=1, description="Poll interval in milliseconds"
     )
+    reconnect_delay: int = Field(
+        default=1, ge=1, description="Delay in seconds between reconnection attempts"
+    )
     ssl: bool = Field(default=False, description="Use SSL")
     ssl_cipher_spec: Optional[str] = Field(
         default=None, description="SSL cipher specification"

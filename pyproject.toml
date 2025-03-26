@@ -9,6 +9,7 @@ dependencies = [
     "anyio>=4.7.0",
     "asyncer>=0.0.8",
     "kubemq>=3.4.2",
+    "loguru>=0.7.3",
     "pydantic>=2.10.4",
     "pymqi>=1.12.10",
     "python-dotenv>=1.0.1",

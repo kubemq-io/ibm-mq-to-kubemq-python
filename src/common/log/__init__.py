@@ -1,43 +1,18 @@
-import logging
 import os
-from logging.config import dictConfig
+from loguru import logger
+import sys
 
 
 def setup_logging():
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    numeric_level = getattr(logging, log_level, logging.INFO)
+    logger.remove()
+    log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
+    logger.add(
+        sys.stdout, level=log_level, colorize=True, backtrace=True, diagnose=True
+    )
 
-    config = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "json": {
-                "format": '{"timestamp": "%(asctime)s", "level": "%(levelname)s", '
-                '"name": "%(name)s", "file": "%(filename)s:%(lineno)d", '
-                '"message": "%(message)s"}',
-            },
-            "standard": {
-                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            },
-        },
-        "handlers": {
-            "console": {
-                "class": "logging.StreamHandler",
-                "formatter": "json",
-                "stream": "ext://sys.stdout",
-            },
-        },
-        "root": {
-            "level": numeric_level,
-            "handlers": ["console"],
-        },
-    }
 
-    dictConfig(config)
+BaseLogger = logger
 
 
 def get_logger(name):
-    return logging.getLogger(name)
-
-
-setup_logging()
+    return BaseLogger
