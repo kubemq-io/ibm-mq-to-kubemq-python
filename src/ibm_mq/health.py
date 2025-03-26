@@ -2,7 +2,7 @@
 Health check module for IBM MQ connections.
 
 This module provides functionality to check the health of an IBM MQ connection,
-focusing on core connection availability without metrics collection.
+focusing solely on basic connection status without intermediary states.
 """
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
@@ -18,7 +18,7 @@ class HealthCheckResult:
     """Result of a health check operation.
     
     Attributes:
-        status (str): Overall health status
+        status (str): Overall health status (healthy or unhealthy)
         details (Dict): Additional health check details
         errors (Dict): Any errors encountered during health check
     """
@@ -42,7 +42,6 @@ class HealthCheckResult:
 class HealthStatus:
     """Health status constants."""
     HEALTHY = "healthy"
-    DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
 
 
@@ -54,38 +53,12 @@ def get_connection_health_status(is_connected: bool, last_error: Optional[Except
         last_error: Last error encountered (if any)
         
     Returns:
-        str: Health status string (healthy, degraded, or unhealthy)
+        str: Health status string (healthy or unhealthy)
     """
-    if is_connected:
+    if is_connected and last_error is None:
         return HealthStatus.HEALTHY
-    elif last_error is not None:
-        return HealthStatus.UNHEALTHY
     else:
-        return HealthStatus.DEGRADED
-
-
-def check_queue_health(queue: Queue) -> Dict[str, Any]:
-    """Check health of queue.
-    
-    Args:
-        queue: The MQ queue to check
-        
-    Returns:
-        Dict: Results of health check
-    """
-    result = {
-        "status": HealthStatus.HEALTHY,
-        "errors": {}
-    }
-    
-    try:
-        # Check if queue is open
-        _ = queue.inquire(pymqi.CMQC.MQIA_CURRENT_Q_DEPTH)
-    except Exception as e:
-        result["status"] = HealthStatus.UNHEALTHY
-        result["errors"]["queue_check"] = str(e)
-    
-    return result
+        return HealthStatus.UNHEALTHY
 
 
 async def perform_health_check(
@@ -99,7 +72,7 @@ async def perform_health_check(
     Args:
         is_connected: Current connection status
         queue_manager: The MQ queue manager connection
-        queue: The MQ queue
+        queue: The MQ queue (not used)
         last_error: Last error encountered
         
     Returns:
@@ -114,26 +87,18 @@ async def perform_health_check(
     # If we have a connection error, add it to errors
     if last_error is not None:
         errors["last_error"] = str(last_error)
+        overall_status = HealthStatus.UNHEALTHY
     
-    # If connected, check queue manager and queue health
-    if is_connected and queue_manager is not None and queue is not None:
+    # Check that we have a connection - any issue means unhealthy
+    if is_connected and queue_manager is not None:
         try:
-            # Check if queue manager is accessible
+            # Basic connection check
             _ = queue_manager.inquire(pymqi.CMQC.MQCA_Q_MGR_NAME)
-            details["queue_manager_accessible"] = True
         except Exception as e:
-            details["queue_manager_accessible"] = False
             errors["queue_manager_check"] = str(e)
-            overall_status = HealthStatus.DEGRADED
-        
-        # Check queue health
-        queue_health = check_queue_health(queue)
-        details["queue_accessible"] = queue_health["status"] == HealthStatus.HEALTHY
-        if queue_health["status"] != HealthStatus.HEALTHY:
-            errors.update(queue_health["errors"])
-            # Degrade overall status if queue has issues
-            if overall_status == HealthStatus.HEALTHY:
-                overall_status = HealthStatus.DEGRADED
+            # Set status to unhealthy and update connection status to disconnected
+            overall_status = HealthStatus.UNHEALTHY
+            details["connection_status"] = "disconnected"
     
     return HealthCheckResult(
         status=overall_status,

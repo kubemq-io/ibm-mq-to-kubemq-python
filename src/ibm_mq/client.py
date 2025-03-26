@@ -50,6 +50,8 @@ class IBMMQClient(Connection):
         polling_task: Asyncio task for message polling
         reconnect_attempts (int): Counter for reconnection attempts
         max_reconnect_attempts (int): Maximum number of reconnection attempts (0 = unlimited)
+        health_check_task: Asyncio task for periodic health check
+        health_check_interval: Interval between health checks in seconds
     """
     def __init__(self, config: Config) -> None:
         """Initialize the IBM MQ client with the provided configuration.
@@ -87,6 +89,8 @@ class IBMMQClient(Connection):
         self.last_error: Optional[Exception] = None
         self.last_health_check: Optional[HealthCheckResult] = None
         self.last_health_check_time: float = 0
+        self.health_check_task: Optional[Task] = None
+        self.health_check_interval: int = 30  # Check health every 30 seconds
         
 
     async def start(self) -> None:
@@ -100,6 +104,9 @@ class IBMMQClient(Connection):
         self.metrics.track_connection_state(ConnectionState.CONNECTING)
         self.metrics.track_connection_attempt()
         self._connect()
+        
+        # Start the health check task
+        self.health_check_task = asyncio.create_task(self._periodic_health_check())
 
     async def stop(self) -> None:
         """Stop the IBM MQ client and release all resources.
@@ -109,6 +116,15 @@ class IBMMQClient(Connection):
         """
         if self.is_polling:
             self.stop_event.set()
+            
+        # Cancel the health check task if running
+        if self.health_check_task and not self.health_check_task.done():
+            self.health_check_task.cancel()
+            try:
+                await self.health_check_task
+            except asyncio.CancelledError:
+                pass
+                
         self._disconnect()
         self.metrics.track_connection_state(ConnectionState.DISCONNECTED)
 
@@ -204,6 +220,8 @@ class IBMMQClient(Connection):
             
         self.is_connected = True
         self.reconnect_attempts = 0  # Reset reconnect attempts on successful connection
+        # Clear last_error when connection is successful
+        self.last_error = None
         self.metrics.track_connection_state(ConnectionState.CONNECTED)
         self.logger.info("Connected to IBM MQ")
         
@@ -270,7 +288,13 @@ class IBMMQClient(Connection):
         
         try:
             self._connect()
+            # Note: last_error is already cleared in _connect() method
             self.logger.info("Successfully reconnected to IBM MQ")
+            
+            # Reset the health check cache to ensure a fresh health check is performed
+            self.last_health_check = None
+            self.last_health_check_time = 0
+            
             return True
         except Exception as e:
             self.logger.error(f"Failed to reconnect: {str(e)}")
@@ -622,7 +646,7 @@ class IBMMQClient(Connection):
         """Check the health of the IBM MQ connection.
         
         This method performs a basic health check of the IBM MQ connection,
-        focusing only on the core connection status.
+        focusing only on the connection status and not checking the queue.
         
         Returns:
             Dict containing health status information
@@ -632,12 +656,27 @@ class IBMMQClient(Connection):
         if self.last_health_check is not None and current_time - self.last_health_check_time < 5:
             return self.last_health_check.to_dict()
             
+        # Note: queue is passed but not used by the health check anymore
         health_result = await perform_health_check(
             is_connected=self.is_connected,
             queue_manager=self.queue_manager,
             queue=self.queue,
             last_error=self.last_error
         )
+        
+        # Check for queue_manager_check errors and update connection state
+        if "queue_manager_check" in health_result.errors:
+            # If we have a queue manager check error, update the connection status
+            if self.is_connected:
+                self.logger.error(f"Queue manager check failed: {health_result.errors['queue_manager_check']}")
+                self.is_connected = False
+                self.metrics.track_connection_state(ConnectionState.DISCONNECTED)
+                self.last_error = Exception(health_result.errors['queue_manager_check'])
+        elif health_result.details.get("connection_status") == "connected" and not self.is_connected:
+            # Connection is back - clear the error and update status
+            self.is_connected = True
+            self.last_error = None
+            self.metrics.track_connection_state(ConnectionState.CONNECTED)
         
         # Add connection details
         if self.is_connected:
@@ -661,3 +700,33 @@ class IBMMQClient(Connection):
             Dict containing all metrics data
         """
         return self.metrics.get_all_metrics()
+
+    async def _periodic_health_check(self) -> None:
+        """Periodic health check task that runs periodically to detect connection issues.
+        
+        This method performs a health check of the IBM MQ connection at a regular interval.
+        If the connection is broken, it attempts to reconnect.
+        """
+        while not self.stop_event.is_set():
+            try:
+                await asyncio.sleep(self.health_check_interval)
+                
+                # Skip health check if we're already trying to reconnect
+                if self.is_connected and not self.stop_event.is_set():
+                    health_result = await self.check_health()
+                    
+                    # If connection is unhealthy but we think we're connected, try to reconnect
+                    if (health_result["status"] == HealthStatus.UNHEALTHY and 
+                            "queue_manager_check" in health_result["errors"] and 
+                            self.is_connected):
+                        self.logger.warning("Periodic health check detected connection issue. Attempting to reconnect...")
+                        # Set connection status to disconnected
+                        self.is_connected = False
+                        self.metrics.track_connection_state(ConnectionState.DISCONNECTED)
+                        # Try to reconnect
+                        asyncio.create_task(self._reconnect())
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"Error in periodic health check: {str(e)}")
+                await asyncio.sleep(5)  # Wait a bit before retrying on error
