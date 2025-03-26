@@ -10,6 +10,12 @@ import pymqi
 from src.common.log import get_logger
 from src.ibm_mq.config import Config
 from src.ibm_mq.strategies import get_receiver_strategy, get_sender_strategy
+from src.ibm_mq.error_classification import (
+    classify_error, 
+    get_retry_recommendation, 
+    get_error_message,
+    ErrorType
+)
 from pymqi import QueueManager, Queue
 
 from src.ibm_mq.exceptions import IBMMQConnectionError
@@ -120,19 +126,43 @@ class IBMMQClient(Connection):
 
             self.queue_manager.connect_with_options(**connect_params)
 
-        except Exception as e:
-            self.logger.exception(f"Error Connecting to queue manager: {str(e)}")
+        except pymqi.MQMIError as e:
+            error_msg = get_error_message(e.reason)
+            self.logger.exception(f"Error connecting to queue manager: {error_msg} (Reason: {e.reason})")
             raise IBMMQConnectionError(
-                f"Error Connecting to queue manager, reason: {str(e)}"
+                f"Error connecting to queue manager: {error_msg}"
             )
+        except Exception as e:
+            self.logger.exception(f"Unexpected error connecting to queue manager: {str(e)}")
+            raise IBMMQConnectionError(
+                f"Unexpected error connecting to queue manager: {str(e)}"
+            )
+            
         try:
             open_options = pymqi.CMQC.MQOO_INPUT_AS_Q_DEF | pymqi.CMQC.MQOO_OUTPUT
             self.queue = pymqi.Queue(
                 self.queue_manager, self.config.queue_name.encode("utf-8"), open_options
             )
+        except pymqi.MQMIError as e:
+            error_msg = get_error_message(e.reason)
+            self.logger.error(f"Error connecting to queue: {error_msg} (Reason: {e.reason})")
+            # Close queue manager if already connected
+            if self.queue_manager:
+                try:
+                    self.queue_manager.disconnect()
+                except:
+                    pass
+            raise IBMMQConnectionError(f"Error connecting to queue: {error_msg}")
         except Exception as e:
-            self.logger.error(f"Error Connecting to queue: {str(e)}")
-            raise IBMMQConnectionError(f"Error Connecting to queue, reason: {str(e)}")
+            self.logger.error(f"Unexpected error connecting to queue: {str(e)}")
+            # Close queue manager if already connected
+            if self.queue_manager:
+                try:
+                    self.queue_manager.disconnect()
+                except:
+                    pass
+            raise IBMMQConnectionError(f"Unexpected error connecting to queue: {str(e)}")
+            
         self.is_connected = True
         self.reconnect_attempts = 0  # Reset reconnect attempts on successful connection
         self.logger.info("Connected to IBM MQ")
@@ -314,23 +344,47 @@ class IBMMQClient(Connection):
                         md.GroupId = pymqi.CMQC.MQGI_NONE
 
                     except pymqi.MQMIError as e:
-                        if (
-                            e.comp == pymqi.CMQC.MQCC_FAILED
-                            and e.reason == pymqi.CMQC.MQRC_NO_MSG_AVAILABLE
-                        ):
-                            await asyncio.sleep(0.1)  # Yield to other coroutines
-                        elif e.reason == pymqi.CMQC.MQRC_CONNECTION_BROKEN:
-                            self.logger.warning("Connection to IBM MQ broken. Will attempt to reconnect.")
+                        error_type = classify_error(e.reason)
+                        error_msg = get_error_message(e.reason)
+                        retry_rec = get_retry_recommendation(e.reason)
+                        
+                        if error_type == ErrorType.TRANSIENT:
+                            # For transient errors, just wait and retry
+                            if e.reason != pymqi.CMQC.MQRC_NO_MSG_AVAILABLE:  # Don't log no message available
+                                self.logger.debug(f"Transient error: {error_msg} (Reason: {e.reason})")
+                            await asyncio.sleep(0.1)
+                        
+                        elif error_type == ErrorType.CONNECTION:
+                            # For connection errors, trigger a reconnection
+                            self.logger.warning(f"Connection error: {error_msg} (Reason: {e.reason}). Will attempt to reconnect.")
                             connection_broken = True
                             self.is_connected = False
+                        
+                        elif error_type == ErrorType.SHUTDOWN:
+                            # For shutdown errors, wait longer before reconnecting
+                            self.logger.warning(f"Queue manager shutting down: {error_msg} (Reason: {e.reason}). Will attempt to reconnect after delay.")
+                            connection_broken = True
+                            self.is_connected = False
+                            await asyncio.sleep(retry_rec["retry_delay"])
+                        
                         else:
-                            self.logger.error(f"Error polling for message: {str(e)}")
+                            # For permanent or configuration errors, log error but keep trying
+                            self.logger.error(f"Error polling for message: {error_msg} (Reason: {e.reason})")
+                            await asyncio.sleep(1.0)  # Slightly longer delay for permanent errors
+                            
+                    except Exception as e:
+                        self.logger.error(f"Unexpected error polling for message: {str(e)}")
+                        # Mark connection as broken for most exceptions to trigger reconnection
+                        if self.is_connected:
+                            connection_broken = True
+                            self.is_connected = False
                 except Exception as e:
-                    self.logger.error(f"Error polling for message: {str(e)}")
+                    self.logger.error(f"Error in polling loop: {str(e)}")
                     # Mark connection as broken for most exceptions to trigger reconnection
                     if self.is_connected:
                         connection_broken = True
                         self.is_connected = False
+                    await asyncio.sleep(1.0)  # Add delay to avoid spinning in case of repeated errors
 
             self.is_polling = False
             self.logger.info("Polling stopped")
@@ -382,9 +436,14 @@ class IBMMQClient(Connection):
                 self.logger.info("Message sent successfully")
                 
             except pymqi.MQMIError as e:
-                if e.reason == pymqi.CMQC.MQRC_CONNECTION_BROKEN:
-                    self.logger.warning("Connection broken while sending message. Will attempt to reconnect.")
+                error_type = classify_error(e.reason)
+                error_msg = get_error_message(e.reason)
+                retry_rec = get_retry_recommendation(e.reason)
+                
+                if error_type == ErrorType.CONNECTION or error_type == ErrorType.SHUTDOWN:
+                    self.logger.warning(f"Connection error while sending message: {error_msg} (Reason: {e.reason}). Will attempt to reconnect.")
                     self.is_connected = False
+                    
                     # Try to reconnect and send the message again
                     reconnected = await self._reconnect()
                     if reconnected:
@@ -392,12 +451,37 @@ class IBMMQClient(Connection):
                         await self.send_message(message)
                     else:
                         self.logger.error("Failed to reconnect and send message")
-                        raise IBMMQConnectionError(f"Error sending message after reconnection attempt, reason: {str(e)}")
+                        raise IBMMQConnectionError(f"Error sending message after reconnection attempt: {error_msg}")
+                
+                elif error_type == ErrorType.TRANSIENT:
+                    # For transient errors like queue full, we could implement a retry with backoff
+                    self.logger.warning(f"Transient error while sending message: {error_msg} (Reason: {e.reason}). Retrying...")
+                    
+                    # Implement simple retry for transient errors
+                    for retry in range(3):
+                        try:
+                            await asyncio.sleep(0.5 * (retry + 1))  # Increasing delay
+                            await sender_strategy.send_message(self.queue, message_str, self.config)
+                            self.logger.info(f"Message sent successfully after retry {retry+1}")
+                            return
+                        except pymqi.MQMIError as retry_error:
+                            # If we get a non-transient error during retry, raise it
+                            if classify_error(retry_error.reason) != ErrorType.TRANSIENT:
+                                error_msg = get_error_message(retry_error.reason)
+                                self.logger.error(f"Error sending message during retry: {error_msg} (Reason: {retry_error.reason})")
+                                raise IBMMQConnectionError(f"Error sending message: {error_msg}")
+                    
+                    # If we've exhausted retries
+                    self.logger.error(f"Failed to send message after retries: {error_msg}")
+                    raise IBMMQConnectionError(f"Failed to send message after retries: {error_msg}")
+                
                 else:
-                    self.logger.error(f"Error sending message: {str(e)}")
-                    raise IBMMQConnectionError(f"Error sending message, reason: {str(e)}")
+                    # For permanent or configuration errors
+                    self.logger.error(f"Error sending message: {error_msg} (Reason: {e.reason})")
+                    raise IBMMQConnectionError(f"Error sending message: {error_msg}")
+                
             except Exception as e:
-                self.logger.error(f"Error sending message: {str(e)}")
-                raise IBMMQConnectionError(f"Error sending message, reason: {str(e)}")
+                self.logger.error(f"Unexpected error sending message: {str(e)}")
+                raise IBMMQConnectionError(f"Unexpected error sending message: {str(e)}")
 
         asyncio.create_task(_send_message())
