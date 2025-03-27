@@ -16,8 +16,14 @@ shutdown_event = asyncio.Event()
 def handle_signal(sig, frame):
     """Handle termination signals from Kubernetes"""
     logger.info(f"Received signal {sig}. Starting graceful shutdown...")
-    # Set the shutdown event - this will trigger the main loop to exit
-    asyncio.get_event_loop().call_soon_threadsafe(shutdown_event.set)
+    # Use a safer way to set the event
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # If no loop is running, create a new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    loop.call_soon_threadsafe(shutdown_event.set)
 
 
 async def main():
@@ -48,30 +54,18 @@ async def main():
     except Exception as e:
         logger.exception(f"Failed to start Kubemq - IBM MQ bindings: {str(e)}")
     finally:
-        logger.info("Stopping Kubemq - IBM MQ bindings and API server")
-        
-        # Stop API server if it was initialized
+        # Graceful shutdown
         if api_server:
             await api_server.stop()
-            
-        # Stop bindings if they were initialized
         if bindings:
             await bindings.stop()
-            
-        remaining_tasks = asyncio.all_tasks() - {asyncio.current_task()}
-        if remaining_tasks:
-            logger.info(f"Cancelling {len(remaining_tasks)} remaining tasks...")
-            for task in remaining_tasks:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        logger.info("Kubemq - IBM MQ bindings and API server stopped")
+        logger.info("Shutdown complete")
 
 
 if __name__ == "__main__":
     try:
-        anyio.run(main)
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received")
+        logger.info("Received keyboard interrupt, shutting down...")
+    except Exception as e:
+        logger.exception(f"Unexpected error during shutdown: {str(e)}")

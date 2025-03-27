@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/static/styles.css?v=1.1">
     <link rel="stylesheet" href="/static/css/roboto.css">
     <link rel="stylesheet" href="/static/css/fontawesome.min.css">
+    <link rel="stylesheet" href="/static/js/debug.css">
+    <link rel="preload" href="/static/webfonts/fa-solid-900.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/webfonts/fa-regular-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/webfonts/fa-brands-400.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
     <div class="container">
@@ -73,8 +77,8 @@
             </div>
 
             <div class="section-tabs">
-                <button id="health-tab" class="tab-btn active">Health Status</button>
-                <button id="metrics-tab" class="tab-btn">Metrics</button>
+                <button id="health-tab" class="tab-btn active" data-panel="health-panel">Health Status</button>
+                <button id="metrics-tab" class="tab-btn" data-panel="metrics-panel">Metrics</button>
             </div>
 
             <div id="health-panel" class="panel active">
@@ -166,6 +170,6 @@
         </div>
     </template>
 
-    <script src="/static/dashboard.js?v=1.1"></script>
+    <script type="module" src="/static/dashboard.js?v=1.2"></script>
 </body>
-</html> 
+</html>
