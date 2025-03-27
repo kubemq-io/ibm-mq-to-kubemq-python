@@ -628,8 +628,12 @@ class IBMMQClient(Connection):
         connection_active = await self.test_connection_directly()
         
         # Update internal state based on actual connection test results
-        if connection_active and not self.is_connected:
+        if connection_active:
             self.transition_to_connected()
+            # Clear any previous errors
+            self.last_error = None
+            # Ensure metrics reflect connected state
+            self.metrics.track_connection_state(ConnectionState.CONNECTED)
         elif not connection_active and self.is_connected:
             self.transition_to_disconnected("Connection test failed during health check")
         
@@ -752,19 +756,10 @@ class IBMMQClient(Connection):
         self.last_health_check_time = 0
         
     def transition_to_reconnecting(self) -> None:
-        """Transition to reconnecting state.
-        
-        Centralized method to ensure all state variables are updated consistently
-        when transitioning to reconnecting state.
-        """
+        """Transition the client to reconnecting state."""
         self.is_connected = False
-        self.metrics.track_connection_state(ConnectionState.RECONNECTING)
-        self.metrics.track_reconnection_attempt()
-        self.logger.info(f"State transition: disconnected -> reconnecting (Attempt: {self.reconnect_attempts + 1})")
-        
-        # Reset health check cache to ensure fresh health check
-        self.last_health_check = None
-        self.last_health_check_time = 0
+        self.metrics.track_connection_state(ConnectionState.CONNECTING)
+        self.logger.info("Transitioning to reconnecting state")
 
     async def _periodic_heartbeat(self) -> None:
         """Periodic heartbeat task that runs periodically to detect connection issues.

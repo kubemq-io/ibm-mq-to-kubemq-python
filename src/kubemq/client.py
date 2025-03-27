@@ -475,28 +475,20 @@ class KubeMQClient(Connection):
     async def check_health(self) -> Dict[str, Any]:
         """Check the health of the KubeMQ connection.
 
-        This method performs a comprehensive health check of the KubeMQ connection.
-
-        The health check includes:
-        1. Basic connection status verification
-        2. Queue accessibility testing
-        3. Reporting of any errors encountered
-        4. Providing connection details for diagnostics
+        This method performs a comprehensive health check of the KubeMQ connection,
+        including:
+        - Connection state verification
+        - Server ping to verify actual connectivity
+        - Error state checking
+        - Latency measurement
 
         Returns:
-            Dict containing health status information with the following structure:
-            {
-                "status": "healthy"|"unhealthy",
-                "details": {connection details and status},
-                "errors": {any errors encountered}
-            }
+            Dict containing health status and details
         """
         health_result = {
-            "status": "healthy" if self.is_connected else "unhealthy",
+            "status": "healthy",
             "details": {
-                "connection_status": (
-                    "connected" if self.is_connected else "disconnected"
-                ),
+                "connection_status": "disconnected",
                 "address": self.config.address,
                 "queue_name": self.config.queue_name,
                 "client_id": self.config.client_id,
@@ -523,6 +515,11 @@ class KubeMQClient(Connection):
                 # If ping successful, clear last_error and ensure connection is marked as connected
                 self.last_error = None
                 self.is_connected = True
+                self.metrics.track_connection_state(ConnectionState.CONNECTED)
+
+                # Update health status and connection status
+                health_result["status"] = "healthy"
+                health_result["details"]["connection_status"] = "connected"
 
                 # Format the ping latency to have at most 2 decimal places
                 health_result["details"]["latency_msec"] = (
@@ -584,3 +581,51 @@ class KubeMQClient(Connection):
             self.metrics.track_connection_state(ConnectionState.DISCONNECTED)
 
         return all_metrics
+
+    def transition_to_reconnecting(self) -> None:
+        """Transition the client to reconnecting state."""
+        self.is_connected = False
+        self.metrics.track_connection_state(ConnectionState.CONNECTING)
+        self.logger.info("Transitioning to reconnecting state")
+
+    async def _reconnect(self) -> bool:
+        """Attempt to reconnect to the KubeMQ server.
+        
+        This method handles the reconnection process with proper state transitions
+        and error handling. It will attempt to establish a new connection and
+        update the client's state accordingly.
+        
+        Returns:
+            bool: True if reconnection was successful, False otherwise
+        """
+        try:
+            self.transition_to_reconnecting()
+            
+            # Create new client instance
+            self.client = Client(
+                address=self.config.address,
+                client_id=self.config.client_id,
+                auth_token=self.config.auth_token,
+                use_tls=self.config.use_tls,
+                cert_file=self.config.cert_file,
+                key_file=self.config.key_file,
+                skip_verify=self.config.skip_verify,
+            )
+            
+            # Test connection with ping
+            self.client.ping()
+            
+            # Update state to connected
+            self.is_connected = True
+            self.metrics.track_connection_state(ConnectionState.CONNECTED)
+            self.last_error = None
+            self.logger.info("Successfully reconnected to KubeMQ server")
+            return True
+            
+        except Exception as e:
+            error_msg = str(e)
+            error_type = classify_error(error_msg)
+            self.logger.error(f"Failed to reconnect to KubeMQ server: {error_msg}")
+            self.last_error = e
+            self.metrics.track_connection_state(ConnectionState.DISCONNECTED)
+            return False
