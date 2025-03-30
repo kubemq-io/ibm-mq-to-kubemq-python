@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
 
 
 class Connection(ABC):
@@ -20,19 +19,10 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    async def check_health(self) -> Dict[str, Any]:
-        """Check the health of the connection.
-        
-        Returns:
-            Dict containing health status information
-        """
-        pass
+    async def is_healthy(self) -> bool:
+        """Check if the connection is healthy.
 
-    @abstractmethod
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get all metrics for this connection.
-        
         Returns:
-            Dict containing all metrics data
+            bool: True if healthy, False otherwise
         """
         pass

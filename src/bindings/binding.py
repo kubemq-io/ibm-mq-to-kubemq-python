@@ -8,7 +8,6 @@ from src.ibm_mq.client import IBMMQClient
 from src.kubemq.client import KubeMQClient
 from src.kubemq.config import Config as KubeMQConfig
 from src.ibm_mq.config import Config as IBMMQConfig
-from src.bindings.metrics import BindingMetricsCollector
 
 
 class Binding:
@@ -17,7 +16,6 @@ class Binding:
         self.source: Connection | None = None
         self.target: Connection | None = None
         self.logger = get_logger(f"binding.{self.config.name}")
-        self.metrics_collector: BindingMetricsCollector | None = None
 
     def init(self):
         """
@@ -71,14 +69,6 @@ class Binding:
             msg = f"Error {target_err} initialization: {str(e)}"
             self.logger.error(msg)
             raise BindingConfigError(msg)
-            
-        # Initialize binding metrics collector
-        if self.source and self.target:
-            self.metrics_collector = BindingMetricsCollector(
-                self.config.name,
-                self.source.metrics,
-                self.target.metrics
-            )
 
     async def start(self):
         await self.target.start()
@@ -88,66 +78,55 @@ class Binding:
     async def stop(self):
         await self.source.stop()
         await self.target.stop()
-        
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get metrics from both source and target connections and aggregate them.
-        
+
+    async def is_healthy(self) -> bool:
+        """Check if the binding is healthy.
+
         Returns:
-            Dict containing aggregated metrics from source and target connections
+            bool: True if both source and target are healthy, False otherwise
         """
-        if self.metrics_collector:
-            return self.metrics_collector.get_metrics()
-        
-        # Fallback if metrics collector is not initialized
-        metrics = {
-            "binding_name": self.config.name,
-            "binding_type": self.config.type.value,
-            "source": None,
-            "target": None
-        }
-        
-        if self.source:
-            metrics["source"] = self.source.get_metrics()
-            
-        if self.target:
-            metrics["target"] = self.target.get_metrics()
-            
-        return metrics
-        
-    async def check_health(self) -> Dict[str, Any]:
-        """Check health of both source and target connections.
-        
+        try:
+            source_healthy = await self.source.is_healthy() if self.source else False
+            target_healthy = await self.target.is_healthy() if self.target else False
+
+            return source_healthy and target_healthy
+        except Exception as e:
+            self.logger.error(f"Error checking binding health: {str(e)}")
+            return False
+
+    async def get_detailed_health(self) -> Dict[str, Any]:
+        """Get detailed health status including source and target.
+
         Returns:
-            Dict containing health information for the binding
+            Dict containing health information for the binding and its components
         """
-        health = {
-            "binding_name": self.config.name,
-            "binding_type": self.config.type.value,
-            "status": "healthy",
-            "source": None,
-            "target": None
-        }
-        
         try:
-            if self.source:
-                source_health = await self.source.check_health()
-                health["source"] = source_health
-                if source_health["status"] != "healthy":
-                    health["status"] = "unhealthy"
+            # Check source health
+            source_healthy = await self.source.is_healthy() if self.source else False
+
+            # Check target health
+            target_healthy = await self.target.is_healthy() if self.target else False
+
+            # Determine binding health
+            binding_healthy = source_healthy and target_healthy
+
+            # Create health response
+            health = {
+                "binding_name": self.config.name,
+                "binding_type": self.config.type.value,
+                "is_healthy": binding_healthy,
+                "source": {"is_healthy": source_healthy},
+                "target": {"is_healthy": target_healthy},
+            }
+
+            return health
         except Exception as e:
-            self.logger.error(f"Error checking source health: {str(e)}")
-            health["status"] = "unhealthy"
-            health["source"] = {"status": "unhealthy", "error": str(e)}
-            
-        try:
-            if self.target:
-                target_health = await self.target.check_health()
-                health["target"] = target_health
-                if target_health["status"] != "healthy":
-                    health["status"] = "unhealthy"
-        except Exception as e:
-            self.logger.error(f"Error checking target health: {str(e)}")
-            health["status"] = "unhealthy"
-            health["target"] = {"status": "unhealthy", "error": str(e)}
-            
-        return health
+            self.logger.error(f"Error getting detailed health: {str(e)}")
+            return {
+                "binding_name": self.config.name,
+                "binding_type": self.config.type.value,
+                "is_healthy": False,
+                "error": str(e),
+                "source": {"is_healthy": False},
+                "target": {"is_healthy": False},
+            }

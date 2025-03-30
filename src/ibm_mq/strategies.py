@@ -14,19 +14,21 @@ import pymqi
 
 class ReceiverStrategy(ABC):
     """Abstract base class for message receiving strategies."""
-    
+
     @abstractmethod
-    async def receive_message(self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO) -> Union[bytes, str]:
+    async def receive_message(
+        self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO
+    ) -> Union[bytes, str]:
         """Receive a message from the queue using the specific strategy.
-        
+
         Args:
             queue: The IBM MQ queue to receive from
             md: Message descriptor for the received message
             gmo: Get message options
-            
+
         Returns:
             The received message content
-            
+
         Raises:
             pymqi.MQMIError: For MQ-specific errors
         """
@@ -35,15 +37,17 @@ class ReceiverStrategy(ABC):
 
 class DefaultReceiverStrategy(ReceiverStrategy):
     """Default message receiving strategy using standard get method."""
-    
-    async def receive_message(self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO) -> Union[bytes, str]:
+
+    async def receive_message(
+        self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO
+    ) -> Union[bytes, str]:
         """Receive a message using the default get method.
-        
+
         Args:
             queue: The IBM MQ queue to receive from
             md: Message descriptor for the received message
             gmo: Get message options
-            
+
         Returns:
             The received message content
         """
@@ -52,15 +56,17 @@ class DefaultReceiverStrategy(ReceiverStrategy):
 
 class Rfh2ReceiverStrategy(ReceiverStrategy):
     """Message receiving strategy using RFH2 headers."""
-    
-    async def receive_message(self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO) -> Union[bytes, str]:
+
+    async def receive_message(
+        self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO
+    ) -> Union[bytes, str]:
         """Receive a message with RFH2 headers.
-        
+
         Args:
             queue: The IBM MQ queue to receive from
             md: Message descriptor for the received message
             gmo: Get message options
-            
+
         Returns:
             The received message content with RFH2 headers
         """
@@ -69,15 +75,17 @@ class Rfh2ReceiverStrategy(ReceiverStrategy):
 
 class NoRfh2ReceiverStrategy(ReceiverStrategy):
     """Message receiving strategy that strips RFH2 headers."""
-    
-    async def receive_message(self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO) -> Union[bytes, str]:
+
+    async def receive_message(
+        self, queue: pymqi.Queue, md: pymqi.MD, gmo: pymqi.GMO
+    ) -> Union[bytes, str]:
         """Receive a message with RFH2 headers stripped.
-        
+
         Args:
             queue: The IBM MQ queue to receive from
             md: Message descriptor for the received message
             gmo: Get message options
-            
+
         Returns:
             The received message content without RFH2 headers
         """
@@ -86,16 +94,16 @@ class NoRfh2ReceiverStrategy(ReceiverStrategy):
 
 class SenderStrategy(ABC):
     """Abstract base class for message sending strategies."""
-    
+
     @abstractmethod
     async def send_message(self, queue: pymqi.Queue, message: str, config: Any) -> None:
         """Send a message to the queue using the specific strategy.
-        
+
         Args:
             queue: The IBM MQ queue to send to
             message: The message content to send
             config: Configuration parameters for sending
-            
+
         Raises:
             pymqi.MQMIError: For MQ-specific errors
         """
@@ -104,10 +112,10 @@ class SenderStrategy(ABC):
 
 class DefaultSenderStrategy(SenderStrategy):
     """Default message sending strategy using standard put method."""
-    
+
     async def send_message(self, queue: pymqi.Queue, message: str, config: Any) -> None:
         """Send a message using the default put method.
-        
+
         Args:
             queue: The IBM MQ queue to send to
             message: The message content to send
@@ -118,10 +126,10 @@ class DefaultSenderStrategy(SenderStrategy):
 
 class Rfh2SenderStrategy(SenderStrategy):
     """Message sending strategy using RFH2 headers."""
-    
+
     async def send_message(self, queue: pymqi.Queue, message: str, config: Any) -> None:
         """Send a message with RFH2 headers.
-        
+
         Args:
             queue: The IBM MQ queue to send to
             message: The message content to send
@@ -132,10 +140,10 @@ class Rfh2SenderStrategy(SenderStrategy):
 
 class CustomSenderStrategy(SenderStrategy):
     """Message sending strategy with custom format and CCSID."""
-    
+
     async def send_message(self, queue: pymqi.Queue, message: str, config: Any) -> None:
         """Send a message with custom format and CCSID settings.
-        
+
         Args:
             queue: The IBM MQ queue to send to
             message: The message content to send
@@ -150,13 +158,13 @@ class CustomSenderStrategy(SenderStrategy):
 
 def get_receiver_strategy(mode: Optional[str]) -> ReceiverStrategy:
     """Factory function to get the appropriate receiver strategy.
-    
+
     Args:
         mode: The receiver mode name ('rfh2', 'no_rfh2', 'default', etc.)
-        
+
     Returns:
         The appropriate receiver strategy instance
-        
+
     Raises:
         ValueError: If the mode is not recognized
     """
@@ -173,13 +181,13 @@ def get_receiver_strategy(mode: Optional[str]) -> ReceiverStrategy:
 
 def get_sender_strategy(mode: Optional[str]) -> SenderStrategy:
     """Factory function to get the appropriate sender strategy.
-    
+
     Args:
         mode: The sender mode name ('rfh2', 'custom', 'default', etc.)
-        
+
     Returns:
         The appropriate sender strategy instance
-        
+
     Raises:
         ValueError: If the mode is not recognized
     """
@@ -191,4 +199,4 @@ def get_sender_strategy(mode: Optional[str]) -> SenderStrategy:
     elif mode == "custom":
         return CustomSenderStrategy()
     else:
-        raise ValueError(f"Invalid sender mode: {mode}") 
+        raise ValueError(f"Invalid sender mode: {mode}")

@@ -3,7 +3,6 @@ import os
 
 os.environ.setdefault("MQ_FILE_PATH", os.path.join(os.getcwd(), "mq_files/windows"))
 import signal
-import anyio
 from src.bindings.bindings import Bindings
 from src.common.log import get_logger
 from src.api.app import APIServer
@@ -35,19 +34,19 @@ async def main():
         logger.info("Starting KubeMQ - IBM MQ bindings")
         bindings = Bindings(config_path)
         bindings.init()
-        
+
         # Initialize and start the API server
         api_port = int(os.environ.get("API_PORT", "9000"))
         api_host = os.environ.get("API_HOST", "0.0.0.0")
         logger.info(f"Initializing API server on {api_host}:{api_port}")
         api_server = APIServer(bindings, host=api_host, port=api_port)
-        
+
         # Start bindings and API server
         await bindings.start()
         await api_server.start()
-        
+
         logger.info("KubeMQ - IBM MQ bindings and API server started successfully")
-        
+
         # Wait for shutdown signal instead of infinite loop
         await shutdown_event.wait()
 
