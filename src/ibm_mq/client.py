@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from asyncio import Event, Task
 from typing import Optional, Callable, Any, Coroutine, Union
 import time
@@ -20,6 +21,7 @@ from src.ibm_mq.error_classification import (
 from pymqi import QueueManager, Queue
 
 from src.ibm_mq.exceptions import IBMMQConnectionError
+from src.metrics.binding import BindingMetricsHelper
 
 
 class IBMMQClient(Connection):
@@ -40,19 +42,19 @@ class IBMMQClient(Connection):
         is_connected (bool): Connection status flag
         polling_task: Asyncio task for message polling
         reconnect_attempts (int): Counter for reconnection attempts
-        health_check_task: Asyncio task for periodic health check
-        health_check_interval: Interval between health checks in seconds
         heartbeat_task: Asyncio task for periodic heartbeat
         heartbeat_interval: Interval between heartbeats in seconds
     """
 
-    def __init__(self, config: Config) -> None:
-        """Initialize the IBM MQ client with the provided configuration.
+    def __init__(self, config: Config, metrics_helper: BindingMetricsHelper) -> None:
+        """Initialize the IBM MQ client with the provided configuration and metrics helper.
 
         Args:
             config (Config): Configuration object containing IBM MQ connection parameters
+            metrics_helper (BindingMetricsHelper): Helper instance for reporting metrics
         """
         self.config: Config = config
+        self.metrics = metrics_helper
         self.logger = get_logger(
             f"ibmmq.{self.config.binding_name}.{self.config.binding_type}"
         )
@@ -61,17 +63,13 @@ class IBMMQClient(Connection):
         self.is_polling: bool = False
         self.stop_event: Event = Event()
         self.is_connected: bool = False
+
         self.polling_task: Optional[Task] = None
         self.reconnect_attempts: int = 0
 
-        # Health tracking data
-        self.last_error: Optional[Exception] = None
-        self.last_health_check = None
-        self.last_health_check_time: float = 0
-
         # Heartbeat for non-poll mode clients
         self.heartbeat_task: Optional[Task] = None
-        self.heartbeat_interval: int = 15  # Heartbeat every 15 seconds
+        self.heartbeat_interval: int = 5  # Heartbeat every 15 seconds
 
     async def start(self) -> None:
         """Start the IBM MQ client by establishing a connection to the MQ server.
@@ -93,6 +91,7 @@ class IBMMQClient(Connection):
         This method signals any polling operations to stop and closes the connection
         to IBM MQ, ensuring proper cleanup of resources.
         """
+
         if self.is_polling:
             self.stop_event.set()
         # Cancel the heartbeat task if running
@@ -117,6 +116,7 @@ class IBMMQClient(Connection):
         """
         try:
             # If already connected, disconnect first
+
             if self.is_connected:
                 self._disconnect()
 
@@ -166,6 +166,7 @@ class IBMMQClient(Connection):
             self.transition_to_disconnected(
                 f"Unexpected error connecting to queue manager: {str(e)}"
             )
+
             raise IBMMQConnectionError(
                 f"Unexpected error connecting to queue manager: {str(e)}"
             )
@@ -366,31 +367,20 @@ class IBMMQClient(Connection):
                         setattr(self, "poll_log_shown", True)
 
                     try:
-                        start_time = time.time()
-
-                        # Use the strategy to receive a message
                         message = await receiver_strategy.receive_message(
                             self.queue, md, gmo
                         )
 
-                        # Calculate receive duration
-                        receive_duration_ms = (time.time() - start_time) * 1000
-
-                        # Process the message
                         cleaned_message: bytes = self.extract_xml_payload(message)
                         if self.config.log_received_messages:
                             self.logger.info(
                                 f"Received Message:\n{gmo.__str__()}\n{md.__str__()}\nMessage:{cleaned_message}"
                             )
+                        await self.metrics.increment_received_message_and_volume(
+                            len(cleaned_message), 1
+                        )
                         try:
-                            callback_start_time = time.time()
-                            self.logger.info("Received message, calling kubemq target")
                             await callback(cleaned_message)
-                            callback_duration_ms = (
-                                time.time() - callback_start_time
-                            ) * 1000
-
-                            self.logger.info("Messaged processed successfully")
                         except Exception as callback_error:
                             self.logger.error(
                                 f"Error in sending to kubemq target: {str(callback_error)}"
@@ -406,7 +396,7 @@ class IBMMQClient(Connection):
                         error_type = classify_error(e.reason)
                         error_msg = get_error_message(e.reason)
                         retry_rec = get_retry_recommendation(e.reason)
-
+                        await self.metrics.increment_received_error(1)
                         if error_type == ErrorType.TRANSIENT:
                             # For transient errors, just wait and retry
                             if (
@@ -422,6 +412,7 @@ class IBMMQClient(Connection):
                             self.logger.error(
                                 f"Connection error: {error_msg} (Reason: {e.reason}). Will attempt to reconnect."
                             )
+
                             connection_broken = True
                             self.is_connected = False
                             self.last_error = e
@@ -450,6 +441,7 @@ class IBMMQClient(Connection):
                         self.logger.error(
                             f"Unexpected error polling for message: {str(e)}"
                         )
+                        await self.metrics.increment_received_error(1)
                         self.last_error = e
                         # Mark connection as broken for most exceptions to trigger reconnection
                         if self.is_connected:
@@ -507,6 +499,7 @@ class IBMMQClient(Connection):
             )
             reconnected = await self._reconnect()
             if not reconnected:
+                await self.metrics.increment_sent_error(1)
                 raise IBMMQConnectionError(
                     "Connection validation failed before send operation"
                 )
@@ -532,14 +525,14 @@ class IBMMQClient(Connection):
                 await sender_strategy.send_message(self.queue, message_str, self.config)
                 send_duration_ms = (time.time() - start_time) * 1000
                 self.logger.debug(f"Message sent to IBM MQ in {send_duration_ms:.2f}ms")
-
+                await self.metrics.increment_sent_message_and_volume(len(message), 1)
             except pymqi.MQMIError as e:
                 error_msg = get_error_message(e.reason)
                 error_type = classify_error(error_msg)
                 self.logger.error(
                     f"Error sending message to IBM MQ: {error_msg} (Reason: {e.reason})"
                 )
-
+                await self.metrics.increment_sent_error(1)
                 # For connection-related errors, attempt reconnection
                 if (
                     error_type == ErrorType.CONNECTION
@@ -559,6 +552,7 @@ class IBMMQClient(Connection):
                 self.logger.error(
                     f"Unexpected error sending message to IBM MQ: {str(e)}"
                 )
+                await self.metrics.increment_sent_error(1)
                 raise IBMMQConnectionError(
                     f"Unexpected error sending message to IBM MQ: {str(e)}"
                 )
@@ -600,13 +594,10 @@ class IBMMQClient(Connection):
         Centralized method to ensure all state variables are updated consistently
         when transitioning to connected state.
         """
-        self.is_connected = True
-        self.last_error = None
-        self.reconnect_attempts = 0
 
-        # Reset health check cache to ensure fresh health check
-        self.last_health_check = None
-        self.last_health_check_time = 0
+        self.is_connected = True
+        self.reconnect_attempts = 0
+        self.metrics.set_connection_status_sync(self.is_connected)
 
     def transition_to_disconnected(self, reason: str) -> None:
         """Transition to disconnected state.
@@ -623,16 +614,13 @@ class IBMMQClient(Connection):
             )
 
         self.is_connected = False
-        self.last_error = Exception(reason)
-
-        # Reset health check cache to ensure fresh health check
-        self.last_health_check = None
-        self.last_health_check_time = 0
+        self.metrics.set_connection_status_sync(self.is_connected)
 
     def transition_to_reconnecting(self) -> None:
         """Transition the client to reconnecting state."""
         self.is_connected = False
         self.logger.info("Transitioning to reconnecting state")
+        self.metrics.set_connection_status_sync(self.is_connected)
 
     async def _periodic_heartbeat(self) -> None:
         """Periodic heartbeat task that runs periodically to detect connection issues.

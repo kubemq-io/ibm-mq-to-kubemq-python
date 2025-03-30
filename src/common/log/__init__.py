@@ -5,7 +5,7 @@ import sys
 
 def setup_logging():
     logger.remove()
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
     logger.add(
         sys.stdout,
         level=log_level,

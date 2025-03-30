@@ -1,11 +1,13 @@
 import asyncio
 import os
 
+from src.metrics.service import MetricsService
+
 os.environ.setdefault("MQ_FILE_PATH", os.path.join(os.getcwd(), "mq_files/windows"))
 import signal
 from src.bindings.bindings import Bindings
 from src.common.log import get_logger
-from src.api.app import APIServer
+
 
 config_path = os.environ.get("CONFIG_PATH", "config.yaml")
 logger = get_logger("main")
@@ -27,23 +29,17 @@ def handle_signal(sig, frame):
 
 async def main():
     bindings: Bindings | None = None
-    api_server: APIServer | None = None
+    metrics_service = MetricsService(port=9000)
     try:
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, handle_signal)
         logger.info("Starting KubeMQ - IBM MQ bindings")
-        bindings = Bindings(config_path)
+        bindings = Bindings(config_path, metrics_service)
         bindings.init()
 
-        # Initialize and start the API server
-        api_port = int(os.environ.get("API_PORT", "9000"))
-        api_host = os.environ.get("API_HOST", "0.0.0.0")
-        logger.info(f"Initializing API server on {api_host}:{api_port}")
-        api_server = APIServer(bindings, host=api_host, port=api_port)
 
-        # Start bindings and API server
+        metrics_service.start()
         await bindings.start()
-        await api_server.start()
 
         logger.info("KubeMQ - IBM MQ bindings and API server started successfully")
 
@@ -53,9 +49,7 @@ async def main():
     except Exception as e:
         logger.exception(f"Failed to start Kubemq - IBM MQ bindings: {str(e)}")
     finally:
-        # Graceful shutdown
-        if api_server:
-            await api_server.stop()
+        metrics_service.stop()
         if bindings:
             await bindings.stop()
         logger.info("Shutdown complete")

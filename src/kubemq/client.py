@@ -7,16 +7,22 @@ from kubemq.queues import Client, QueueMessage
 
 from src.bindings.connection import Connection
 from src.kubemq.exceptions import KubeMQConnectionError
-
-os.environ.setdefault("MQ_FILE_PATH", "C:/Program Files (x86)/IBM/WebSphere MQ")
+from src.kubemq.config import Config
 
 from src.common.log import get_logger
-from src.ibm_mq.config import Config
+from src.metrics.binding import BindingMetricsHelper
 
 
 class KubeMQClient(Connection):
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, metrics_helper: BindingMetricsHelper):
+        """Initialize the KubeMQ client with the provided configuration and metrics helper.
+
+        Args:
+            config (Config): Configuration object containing KubeMQ connection parameters
+            metrics_helper (BindingMetricsHelper): Helper instance for reporting metrics
+        """
         self.config: Config = config
+        self.metrics = metrics_helper
         self.logger = get_logger(
             f"kubemq.{self.config.binding_name}.{self.config.binding_type}"
         )
@@ -83,6 +89,7 @@ class KubeMQClient(Connection):
                             f"Error polling messages: {poll_response.error}"
                         )
                         await self._update_connection_status(False)
+                        await self.metrics.increment_received_error(1)
                         await asyncio.sleep(self.config.poll_interval_seconds)
                         continue
 
@@ -101,7 +108,9 @@ class KubeMQClient(Connection):
                                 f"Error in callback function: {str(callback_error)}, rejecting message"
                             )
                             is_message_processed = False
-
+                        await self.metrics.increment_received_message_and_volume(
+                            len(message.body), 1
+                        )
                         try:
                             if is_message_processed:
                                 message.ack()
@@ -136,13 +145,15 @@ class KubeMQClient(Connection):
             if result.is_error:
                 self.logger.error(f"Error sending message: {result.error}")
                 await self._update_connection_status(False)
+                await self.metrics.increment_sent_error(1)
 
             await self._update_connection_status(True)
-            if result.is_error:
-                self.logger.error(f"Error sending message: {result.error}")
+            await self.metrics.increment_sent_message_and_volume(len(message), 1)
+
         except Exception as e:
             self.logger.error(f"Error sending message: {str(e)}")
 
     async def _update_connection_status(self, is_connected: bool):
         async with self.connection_status_lock:
             self.is_connected = is_connected
+            await self.metrics.set_connection_status(is_connected)

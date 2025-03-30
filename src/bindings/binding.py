@@ -8,11 +8,14 @@ from src.ibm_mq.client import IBMMQClient
 from src.kubemq.client import KubeMQClient
 from src.kubemq.config import Config as KubeMQConfig
 from src.ibm_mq.config import Config as IBMMQConfig
+from src.metrics.binding import BindingMetricsHelper
 
 
 class Binding:
-    def __init__(self, config: BindingConfig):
+    def __init__(self, config: BindingConfig, source_metrics: BindingMetricsHelper, target_metrics: BindingMetricsHelper):
         self.config = config
+        self.source_metrics = source_metrics
+        self.target_metrics = target_metrics
         self.source: Connection | None = None
         self.target: Connection | None = None
         self.logger = get_logger(f"binding.{self.config.name}")
@@ -20,7 +23,7 @@ class Binding:
     def init(self):
         """
         Dynamically selects the source/target classes and configs
-        based on binding type, and initializes them.
+        based on binding type, initializes them, and passes metrics helpers.
         """
 
         if self.config.type == BindingType.IBM_MQ_TO_KUBEMQ:
@@ -34,6 +37,8 @@ class Binding:
                 KubeMQConfig,
                 "kubemq target",
             )
+            source_metrics_helper = self.source_metrics
+            target_metrics_helper = self.target_metrics
         elif self.config.type == BindingType.KUBEMQ_TO_IBM_MQ:
             source_client_cls, source_config_cls, source_err = (
                 KubeMQClient,
@@ -45,6 +50,8 @@ class Binding:
                 IBMMQConfig,
                 "ibmmq target",
             )
+            source_metrics_helper = self.source_metrics
+            target_metrics_helper = self.target_metrics
         else:
             raise BindingConfigError(f"Unsupported binding type: {self.config.type}")
 
@@ -53,9 +60,9 @@ class Binding:
             source_cfg = source_config_cls(**self.config.source.model_dump())
             source_cfg.binding_name = self.config.name
             source_cfg.binding_type = "source"
-            self.source = source_client_cls(source_cfg)
+            self.source = source_client_cls(source_cfg, source_metrics_helper)
         except Exception as e:
-            msg = f"Error {source_err} initialization: {str(e)}"
+            msg = f"Error initializing {source_err}: {str(e)}"
             self.logger.exception(msg)
             raise BindingConfigError(msg)
 
@@ -64,10 +71,10 @@ class Binding:
             target_cfg = target_config_cls(**self.config.target.model_dump())
             target_cfg.binding_name = self.config.name
             target_cfg.binding_type = "target"
-            self.target = target_client_cls(target_cfg)
+            self.target = target_client_cls(target_cfg, target_metrics_helper)
         except Exception as e:
-            msg = f"Error {target_err} initialization: {str(e)}"
-            self.logger.error(msg)
+            msg = f"Error initializing {target_err}: {str(e)}"
+            self.logger.exception(msg)
             raise BindingConfigError(msg)
 
     async def start(self):
