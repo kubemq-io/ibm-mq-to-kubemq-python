@@ -37,7 +37,6 @@ async def main():
         bindings = Bindings(config_path, metrics_service)
         bindings.init()
 
-
         metrics_service.start()
         await bindings.start()
 

@@ -24,7 +24,8 @@ class KubeMQClient(Connection):
         self.config: Config = config
         self.metrics = metrics_helper
         self.logger = get_logger(
-            f"kubemq.{self.config.binding_name}.{self.config.binding_type}"
+            f"kubemq.{self.config.binding_name}.{self.config.binding_type}",
+            self.config.queue_name,
         )
         self.client: Client | None = None
         self.is_polling = False
@@ -60,7 +61,7 @@ class KubeMQClient(Connection):
     async def _disconnect(self):
         try:
             await self._update_connection_status(False)
-            # await asyncio.to_thread(self.client.close)
+            self.logger.info("Disconnecting from Kubemq")
         except Exception as e:
             self.logger.exception(
                 f"Error disconnecting from Kubemq server, reason: {str(e)}"
@@ -97,10 +98,12 @@ class KubeMQClient(Connection):
 
                     if len(poll_response.messages) == 0:
                         continue
-
+                    self.logger.debug(
+                        f"Received {len(poll_response.messages)} messages"
+                    )
                     for message in poll_response.messages:
                         try:
-                            self.logger.info(f"Received message: {message.body}")
+                            self.logger.trace(f"{message.body}")
                             await callback(message.body)
                             is_message_processed = True
                         except Exception as callback_error:
@@ -135,7 +138,8 @@ class KubeMQClient(Connection):
 
     async def send_message(self, message: bytes):
         try:
-            self.logger.info(f"Sending message: {message}")
+            self.logger.debug(f"Sending message")
+            self.logger.trace(f"{message}")
             result = await self.client.send_queues_message_async(
                 QueueMessage(
                     body=message,
@@ -149,7 +153,7 @@ class KubeMQClient(Connection):
 
             await self._update_connection_status(True)
             await self.metrics.increment_sent_message_and_volume(len(message), 1)
-
+            self.logger.debug(f"Message sent successfully")
         except Exception as e:
             self.logger.error(f"Error sending message: {str(e)}")
 

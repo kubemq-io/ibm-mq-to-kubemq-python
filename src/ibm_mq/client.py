@@ -56,7 +56,8 @@ class IBMMQClient(Connection):
         self.config: Config = config
         self.metrics = metrics_helper
         self.logger = get_logger(
-            f"ibmmq.{self.config.binding_name}.{self.config.binding_type}"
+            f"ibmmq.{self.config.binding_name}.{self.config.binding_type}",
+            self.config.queue_name,
         )
         self.queue_manager: Optional[QueueManager] = None
         self.queue: Optional[Queue] = None
@@ -373,8 +374,9 @@ class IBMMQClient(Connection):
 
                         cleaned_message: bytes = self.extract_xml_payload(message)
                         if self.config.log_received_messages:
-                            self.logger.info(
-                                f"Received Message:\n{gmo.__str__()}\n{md.__str__()}\nMessage:{cleaned_message}"
+                            self.logger.debug(f"Received message")
+                            self.logger.trace(
+                                f"\n{gmo.__str__()}\n{md.__str__()}\n{cleaned_message}"
                             )
                         await self.metrics.increment_received_message_and_volume(
                             len(cleaned_message), 1
@@ -521,10 +523,8 @@ class IBMMQClient(Connection):
 
                 # Use the strategy to send the message
                 self.logger.debug("Sending message to IBM MQ")
-                start_time = time.time()
+                self.logger.trace(f"{message_str}")
                 await sender_strategy.send_message(self.queue, message_str, self.config)
-                send_duration_ms = (time.time() - start_time) * 1000
-                self.logger.debug(f"Message sent to IBM MQ in {send_duration_ms:.2f}ms")
                 await self.metrics.increment_sent_message_and_volume(len(message), 1)
             except pymqi.MQMIError as e:
                 error_msg = get_error_message(e.reason)
@@ -598,6 +598,7 @@ class IBMMQClient(Connection):
         self.is_connected = True
         self.reconnect_attempts = 0
         self.metrics.set_connection_status_sync(self.is_connected)
+        self.logger.info("State transition: disconnected -> connected")
 
     def transition_to_disconnected(self, reason: str) -> None:
         """Transition to disconnected state.

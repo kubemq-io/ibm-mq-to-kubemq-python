@@ -121,7 +121,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.7.0" },
     { name = "asyncer", specifier = ">=0.0.8" },
     { name = "fastapi" },
-    { name = "kubemq", specifier = ">=3.5.1" },
+    { name = "kubemq", specifier = ">=3.5.3" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pydantic", specifier = ">=2.10.4" },
     { name = "pymqi", specifier = ">=1.12.10" },
@@ -140,7 +140,7 @@ wheels = [
 
 [[package]]
 name = "kubemq"
-version = "3.5.1"
+version = "3.5.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "grpcio" },
@@ -149,9 +149,9 @@ dependencies = [
     { name = "pyjwt" },
     { name = "setuptools" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/54/fe/228c1c57bb5aa59a9d103b8a4af546654304811ced8b4f85b1b27f0b12da/kubemq-3.5.1.tar.gz", hash = "sha256:89e9c8153c39de1a5245a2b884a08a57c83d98fb93ea1256170a78c7152add9e", size = 63254 }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/fd/33588592177f59fe0823bab1b53aa5684183b969bcd65491954150af281c/kubemq-3.5.3.tar.gz", hash = "sha256:84c575a464772f689a5075263bc24ad526ea4480f4ccc40ce7c0e2cc5f71d3b5", size = 62968 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/0e/c99f24f03cd81862612def59a9ed771ac79e1659adb5b6180111d3667843/kubemq-3.5.1-py3-none-any.whl", hash = "sha256:f137df5232009ea5e5a8c7415598eb92086cef7119dcd0b53403cb0b005cf770", size = 93928 },
+    { url = "https://files.pythonhosted.org/packages/90/5d/2647ac56b0489b935067f11a5951a806001a3d4ca69208e5df09980fede9/kubemq-3.5.3-py3-none-any.whl", hash = "sha256:5fe22872475114d2964eb147f60cc3003888a2aa42ed9ab7b5d8a56b1e3e620a", size = 93475 },
 ]
 
 [[package]]

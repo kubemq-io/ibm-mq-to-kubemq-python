@@ -19,10 +19,13 @@ def setup_logging():
 BaseLogger = logger
 
 
-def get_logger(name):
-    if name:
-        return BaseLogger.bind(module=name)
-    return BaseLogger
+def get_logger(module_name: str, queue_name: str = None):
+    full_module_name = ""
+    if module_name:
+        full_module_name = module_name
+    if queue_name:
+        full_module_name = f"{full_module_name}/{queue_name}"
+    return BaseLogger.bind(module=full_module_name)
 
 
 setup_logging()
