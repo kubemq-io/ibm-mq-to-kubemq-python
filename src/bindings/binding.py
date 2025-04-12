@@ -1,13 +1,12 @@
+from __future__ import annotations
 from typing import Dict, Any
 
 from src.bindings.config import BindingConfig, BindingType
 from src.bindings.connection import Connection
 from src.bindings.exceptions import BindingConfigError
 from src.common.log import get_logger
-from src.ibm_mq.client import IBMMQClient
 from src.kubemq.client import KubeMQClient
 from src.kubemq.config import Config as KubeMQConfig
-from src.ibm_mq.config import Config as IBMMQConfig
 from src.metrics.binding import BindingMetricsHelper
 from src.bindings.retry import RetryWrapper
 
@@ -28,6 +27,9 @@ class Binding:
         """
 
         if self.config.type == BindingType.IBM_MQ_TO_KUBEMQ:
+            from src.ibm_mq.client import IBMMQClient
+            from src.ibm_mq.config import Config as IBMMQConfig
+
             source_client_cls, source_config_cls, source_err = (
                 IBMMQClient,
                 IBMMQConfig,
@@ -41,6 +43,8 @@ class Binding:
             source_metrics_helper = self.source_metrics
             target_metrics_helper = self.target_metrics
         elif self.config.type == BindingType.KUBEMQ_TO_IBM_MQ:
+            from src.ibm_mq.client import IBMMQClient
+            from src.ibm_mq.config import Config as IBMMQConfig
             source_client_cls, source_config_cls, source_err = (
                 KubeMQClient,
                 KubeMQConfig,
@@ -50,6 +54,19 @@ class Binding:
                 IBMMQClient,
                 IBMMQConfig,
                 "ibmmq target",
+            )
+            source_metrics_helper = self.source_metrics
+            target_metrics_helper = self.target_metrics
+        elif self.config.type == BindingType.KUBEMQ_TO_KUBEMQ:
+            source_client_cls, source_config_cls, source_err = (
+                KubeMQClient,
+                KubeMQConfig,
+                "kubemq source",
+            )
+            target_client_cls, target_config_cls, target_err = (
+                KubeMQClient,
+                KubeMQConfig,
+                "kubemq target",
             )
             source_metrics_helper = self.source_metrics
             target_metrics_helper = self.target_metrics

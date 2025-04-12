@@ -1,7 +1,8 @@
+from __future__ import annotations
 from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
-import pymqi
+# import pymqi
 
 
 class Config(BaseModel):
@@ -50,6 +51,7 @@ class Config(BaseModel):
         return self
 
     def get_md_format(self) -> bytes:
+        import pymqi
         format_map = {
             "": pymqi.CMQC.MQFMT_NONE,
             "MQADMIN": pymqi.CMQC.MQFMT_ADMIN,

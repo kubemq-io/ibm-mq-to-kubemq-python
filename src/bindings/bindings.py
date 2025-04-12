@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 from typing import List, Dict, Any
 
@@ -29,6 +30,11 @@ class Bindings:
                 elif binding_config.type == BindingType.KUBEMQ_TO_IBM_MQ:
                     source_type = "kubemq"
                     target_type = "ibm_mq"
+                    source_queue = binding_config.source.queue_name
+                    target_queue = binding_config.target.queue_name
+                elif binding_config.type == BindingType.KUBEMQ_TO_KUBEMQ:
+                    source_type = "kubemq"
+                    target_type = "kubemq"
                     source_queue = binding_config.source.queue_name
                     target_queue = binding_config.target.queue_name
                 else:

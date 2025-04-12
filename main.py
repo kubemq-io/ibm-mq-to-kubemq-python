@@ -33,20 +33,20 @@ async def main():
     try:
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, handle_signal)
-        logger.info("Starting KubeMQ - IBM MQ bindings")
+        logger.info("Starting KubeMQ - Connectors bindings")
         bindings = Bindings(config_path, metrics_service)
         bindings.init()
 
         metrics_service.start()
         await bindings.start()
 
-        logger.info("KubeMQ - IBM MQ bindings and API server started successfully")
+        logger.info("KubeMQ - Connectors bindings and API server started successfully")
 
         # Wait for shutdown signal instead of infinite loop
         await shutdown_event.wait()
 
     except Exception as e:
-        logger.exception(f"Failed to start Kubemq - IBM MQ bindings: {str(e)}")
+        logger.exception(f"Failed to start Kubemq - Connectors bindings: {str(e)}")
     finally:
         metrics_service.stop()
         if bindings:

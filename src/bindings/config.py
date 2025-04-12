@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import yaml
 from enum import Enum
@@ -5,12 +6,13 @@ from typing import Dict, Any, Union
 
 from pydantic import BaseModel, Field
 from src.kubemq.config import Config as KubeMQConfig
-from src.ibm_mq.config import Config as IBMMQConfig
+# from src.ibm_mq.config import Config as IBMMQConfig
 
 
 class BindingType(Enum):
     KUBEMQ_TO_IBM_MQ = "kubemq_to_ibm_mq"
     IBM_MQ_TO_KUBEMQ = "ibm_mq_to_kubemq"
+    KUBEMQ_TO_KUBEMQ = "kubemq_to_kubemq"
 
 
 class RetryConfig(BaseModel):
@@ -22,10 +24,10 @@ class RetryConfig(BaseModel):
 class BindingConfig(BaseModel):
     name: str = Field(default=None, description="Name of the binding")
     type: BindingType = Field(default=None, description="Type of binding")
-    source: Union[KubeMQConfig, IBMMQConfig] = Field(
+    source: BaseModel = Field(
         default=None, description="Source configuration"
     )
-    target: Union[KubeMQConfig, IBMMQConfig] = Field(
+    target: BaseModel = Field(
         default=None, description="Target configuration"
     )
     retry: RetryConfig = Field(
@@ -53,11 +55,18 @@ class BindingsConfig(BaseModel):
 
                     # Set correct config types based on binding type
                     if binding_type == BindingType.KUBEMQ_TO_IBM_MQ:
+                        from src.ibm_mq.config import Config as IBMMQConfig
                         binding["source"] = KubeMQConfig(**binding["source"])
                         binding["target"] = IBMMQConfig(**binding["target"])
-                    else:  # IBM_MQ_TO_KUBEMQ
+                    elif binding_type == BindingType.IBM_MQ_TO_KUBEMQ:
+                        from src.ibm_mq.config import Config as IBMMQConfig# IBM_MQ_TO_KUBEMQ
                         binding["source"] = IBMMQConfig(**binding["source"])
                         binding["target"] = KubeMQConfig(**binding["target"])
+                    elif binding_type == BindingType.KUBEMQ_TO_KUBEMQ:
+                        binding["source"] = KubeMQConfig(**binding["source"])
+                        binding["target"] = KubeMQConfig(**binding["target"])
+                    else:
+                        raise ValueError(f"Unsupported binding type: {binding_type}")
 
             return BindingsConfig(**yaml_data)
         except Exception as e:

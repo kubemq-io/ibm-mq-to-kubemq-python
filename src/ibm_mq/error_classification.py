@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Error classification for IBM MQ operations.
 
 This module provides utilities for classifying IBM MQ errors as transient

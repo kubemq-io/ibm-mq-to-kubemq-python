@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Strategy classes for IBM MQ message receiving and sending.
 
 This module contains the strategy pattern implementation for different
