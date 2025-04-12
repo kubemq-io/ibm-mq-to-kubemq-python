@@ -13,6 +13,12 @@ class BindingType(Enum):
     IBM_MQ_TO_KUBEMQ = "ibm_mq_to_kubemq"
 
 
+class RetryConfig(BaseModel):
+    disable_retry: bool = Field(default=False, description="Disable retry mechanism")
+    max_retries: int = Field(default=3, description="Maximum number of retry attempts")
+    delay_seconds: float = Field(default=1.0, description="Delay between retries (seconds)")
+
+
 class BindingConfig(BaseModel):
     name: str = Field(default=None, description="Name of the binding")
     type: BindingType = Field(default=None, description="Type of binding")
@@ -21,6 +27,9 @@ class BindingConfig(BaseModel):
     )
     target: Union[KubeMQConfig, IBMMQConfig] = Field(
         default=None, description="Target configuration"
+    )
+    retry: RetryConfig = Field(
+        default_factory=RetryConfig, description="Retry configuration"
     )
 
 

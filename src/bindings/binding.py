@@ -9,6 +9,7 @@ from src.kubemq.client import KubeMQClient
 from src.kubemq.config import Config as KubeMQConfig
 from src.ibm_mq.config import Config as IBMMQConfig
 from src.metrics.binding import BindingMetricsHelper
+from src.bindings.retry import RetryWrapper
 
 
 class Binding:
@@ -80,7 +81,28 @@ class Binding:
     async def start(self):
         await self.target.start()
         await self.source.start()
-        await self.source.poll(self.target.send_message)
+        
+        # Create a wrapped version of target's send_message with retry logic
+        if not self.config.retry.disable_retry:
+            retry_wrapper = RetryWrapper(
+                max_retries=self.config.retry.max_retries,
+                delay_seconds=self.config.retry.delay_seconds,
+                logger=self.logger
+            )
+            
+            @retry_wrapper
+            async def wrapped_send_message(message: bytes):
+                try:
+                    return await self.target.send_message(message)
+                except Exception as e:
+                    self.logger.error(f"Error in target send_message: {str(e)}")
+                    # Re-raise to trigger retry logic
+                    raise
+            
+            await self.source.poll(wrapped_send_message)
+        else:
+            # Use original callback if retry is disabled
+            await self.source.poll(self.target.send_message)
 
     async def stop(self):
         await self.source.stop()
